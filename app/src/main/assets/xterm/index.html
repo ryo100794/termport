@@ -63,7 +63,8 @@ const SELECTION_RELEASE_BLOCK_MS = 160;
 const SELECTION_ACTIVE_BLOCK_MS = 100000;
 const SCROLL_TOUCH_THRESHOLD_PX = 18;
 const POINTER_MOVE_CANCEL_PX = 14;
-const XTERM_SCROLLBACK = 5000;
+const XTERM_SCROLLBACK = 20000;
+const XTERM_TRANSCRIPT_LIMIT = 1024 * 1024;
 let fontSize = DEFAULT_FONT_SIZE;
 let activePane = 0;
 let split = false;
@@ -677,6 +678,11 @@ class XtermCompat {
     this.canvas = host.querySelector('.xterm-screen canvas') || host;
     this.dataHandlers = [];
     this.filterBuffer = '';
+    this.persistKey = null;
+    this.persistSession = 0;
+    this.persistTimer = null;
+    this.transcript = '';
+    this.restoring = false;
     this.term.onData(data => this.emitData(data));
     this.fit();
   }
@@ -688,23 +694,92 @@ class XtermCompat {
   emitData(data) { for (const cb of this.dataHandlers) cb(data); }
   fit() { this.term.options.fontSize = this.options.fontSize; this.fitAddon.fit(); this.refresh(); }
   focus() { this.term.focus(); }
+  setPersistKey(key) {
+    if (this.persistKey && this.persistKey !== key) this.persistNow();
+    this.persistKey = key;
+    this.persistSession = Number(String(key).replace(/^session-/, '')) || 0;
+    this.filterBuffer = '';
+    this.transcript = '';
+    this.term.reset();
+    this.restorePersisted();
+  }
+  loadPersistedJson() {
+    try {
+      if (window.Android && Android.loadScrollback) return Android.loadScrollback(this.persistSession || 0) || '';
+    } catch (_) {}
+    try { return localStorage.getItem(scrollbackStoragePrefix + this.persistKey) || ''; } catch (_) { return ''; }
+  }
+  savePersistedJson(json) {
+    try {
+      if (window.Android && Android.saveScrollback) { Android.saveScrollback(this.persistSession || 0, json); return; }
+    } catch (_) {}
+    try { localStorage.setItem(scrollbackStoragePrefix + this.persistKey, json); } catch (_) {}
+  }
+  restorePersisted() {
+    if (!this.persistKey) return;
+    try {
+      const raw = this.loadPersistedJson();
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      let text = '';
+      if (typeof obj.transcript === 'string') text = obj.transcript;
+      else {
+        const lines = Array.isArray(obj.lines) ? obj.lines : [];
+        const screen = Array.isArray(obj.screen) ? obj.screen : [];
+        text = lines.concat(screen).map(x => String(x)).join('\r\n');
+      }
+      if (!text) return;
+      this.restoring = true;
+      this.transcript = text.slice(-XTERM_TRANSCRIPT_LIMIT);
+      this.filterBuffer = '';
+      this.term.write(this.filterOutput(this.transcript), () => {
+        this.restoring = false;
+        this.refresh();
+      });
+    } catch (_) {
+      this.restoring = false;
+    }
+  }
+  appendTranscript(text) {
+    if (this.restoring || !this.persistKey || !text) return;
+    this.transcript += text;
+    if (this.transcript.length > XTERM_TRANSCRIPT_LIMIT) this.transcript = this.transcript.slice(-XTERM_TRANSCRIPT_LIMIT);
+    this.schedulePersist();
+  }
+  schedulePersist() {
+    if (!this.persistKey) return;
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => this.persistNow(), PERSIST_DELAY_MS);
+  }
+  persistNow() {
+    if (!this.persistKey) return;
+    try {
+      if (this.persistTimer) clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+      this.savePersistedJson(JSON.stringify({ renderer:'xterm', transcript:this.transcript }));
+    } catch (_) {}
+  }
   filterOutput(text) {
     let input = this.filterBuffer + text;
     this.filterBuffer = '';
-    const lastEsc = Math.max(input.lastIndexOf(''), input.lastIndexOf(''));
+    const lastEsc = Math.max(input.lastIndexOf('\x1b'), input.lastIndexOf('\u009b'));
     if (lastEsc >= 0 && input.length - lastEsc < 32 && !/[A-Za-z~]$/.test(input.slice(lastEsc))) {
       this.filterBuffer = input.slice(lastEsc);
       input = input.slice(0, lastEsc);
     }
     return input
-      .replace(/\[\?(?:47|1047|1049)[hl]/g, '')
-      .replace(/\[\?(?:47|1047|1049);?\d*[hl]/g, '')
-      .replace(/\[\?\d*;?(?:47|1047|1049)[hl]/g, '');
+      .replace(/\x1b\[\?(?:47|1047|1049)[hl]/g, '')
+      .replace(/\x1b\[\?(?:47|1047|1049);?\d*[hl]/g, '')
+      .replace(/\x1b\[\?\d*;?(?:47|1047|1049)[hl]/g, '');
   }
-  write(text, cb) { this.term.write(this.filterOutput(text), cb); }
+  write(text, cb) {
+    const filtered = this.filterOutput(text);
+    this.appendTranscript(filtered);
+    this.term.write(filtered, cb);
+  }
   clear() { this.term.clear(); }
   refresh() { try { this.term.clearTextureAtlas(); this.term.refresh(0, this.term.rows - 1); } catch (_) {} }
-  scrollView(delta) { try { this.term.scrollLines(delta); } catch (_) {} }
+  scrollView(delta) { try { this.term.scrollLines(-delta); } catch (_) {} }
   clearTextureAtlas() { try { this.term.clearTextureAtlas(); } catch (_) {} }
   select(x, y, len) { this.term.select(x, y, len); }
   clearSelection() { this.term.clearSelection(); }
@@ -712,6 +787,7 @@ class XtermCompat {
   setSelectionRange(start, end) { const first = Math.min(start, end); this.term.select(first % this.cols, Math.floor(first / this.cols), Math.max(1, Math.abs(end - start) + 1)); }
   getSelection() { return this.term.getSelection(); }
 }
+
 
 function makePane(index) {
   const term = rendererMode === 'safe' ? new XtermCompat(document.getElementById('term' + index), { fontSize }) : new VirtualTerm(document.getElementById('term' + index), { fontSize });
