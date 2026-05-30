@@ -589,6 +589,7 @@ class XtermCompat {
   write(text, cb) { this.term.write(text, cb); }
   clear() { this.term.clear(); }
   refresh() { try { this.term.clearTextureAtlas(); this.term.refresh(0, this.term.rows - 1); } catch (_) {} }
+  scrollView(delta) { try { this.term.scrollLines(delta); } catch (_) {} }
   clearTextureAtlas() { try { this.term.clearTextureAtlas(); } catch (_) {} }
   select(x, y, len) { this.term.select(x, y, len); }
   clearSelection() { this.term.clearSelection(); }
@@ -737,13 +738,14 @@ document.getElementById('terms').addEventListener('touchend', ev => { if (ev.tou
 window.addEventListener('resize', scheduleWindowFit);
 if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleWindowFit);
 
-let longPressTimer = null, selectionStartPoint = null, pointerSelection = null, selectionMode = null;
+let longPressTimer = null, selectionStartPoint = null, pointerSelection = null, pointerScroll = null, selectionMode = null;
 function selectedText() { return active().term.getSelection(); }
 function exitSelectionMode(refocus=true) {
   if (longPressTimer) clearTimeout(longPressTimer);
   longPressTimer = null;
   selectionStartPoint = null;
   pointerSelection = null;
+  pointerScroll = null;
   selectionMode = null;
   selecting = false;
   selectionInputBlockUntil = 0;
@@ -784,6 +786,7 @@ function finishSelectionDrag(paneIndex, ev) {
   longPressTimer = null;
   if (selectionMode) selectionMode.dragging = false;
   pointerSelection = null;
+  pointerScroll = null;
   selectionStartPoint = null;
   selectionInputBlockUntil = Date.now() + SELECTION_RELEASE_BLOCK_MS;
   try { document.getElementById('term' + paneIndex).releasePointerCapture(ev.pointerId); } catch (_) {}
@@ -802,6 +805,7 @@ for (let i=0; i<panes.length; i++) {
     }
     if (longPressTimer) clearTimeout(longPressTimer);
     pointerSelection = { pane:i, pointerId:ev.pointerId };
+    pointerScroll = { pane:i, pointerId:ev.pointerId, y:ev.clientY, active:false };
     longPressTimer = setTimeout(() => {
       beginSelectionDrag(i, ev.pointerId, startCell, host, false);
     }, LONG_PRESS_MS);
@@ -813,6 +817,19 @@ for (let i=0; i<panes.length; i++) {
       selectionMode.end = cellFromPoint(panes[i].term, ev);
       applySelectionMode();
       return;
+    }
+    if (pointerScroll && pointerScroll.pane === i && ev.pointerId === pointerScroll.pointerId && !selectionMode) {
+      const dy = ev.clientY - pointerScroll.y;
+      if (Math.abs(dy) > SCROLL_TOUCH_THRESHOLD_PX) {
+        ev.preventDefault();
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        pointerSelection = null;
+        pointerScroll.active = true;
+        const t = panes[i].term;
+        if (t.scrollView) t.scrollView(dy > 0 ? 3 : -3);
+        pointerScroll.y = ev.clientY;
+        return;
+      }
     }
     if (longPressTimer && pointerSelection && ev.pointerId === pointerSelection.pointerId && pointMovedFar(ev, selectionStartPoint)) {
       clearTimeout(longPressTimer);
