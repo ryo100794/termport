@@ -71,11 +71,11 @@ let selecting = false;
 let selectionInputBlockUntil = 0;
 let imeSuppressText = '';
 let imeSuppressUntil = 0;
-const storageKey = 'imeConsoleLayoutV1';
+const storageKey = 'termPortLayoutV3';
 const scrollbackStoragePrefix = 'imeConsoleScrollbackV1:';
 function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split, activePane, fontSize, rendererMode, sessions: panes.map(p => p.session) })); } catch (_) {} }
 function loadLayout() { try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (_) { return {}; } }
-let rendererMode = loadLayout().rendererMode === 'safe' ? 'safe' : 'buffer';
+let rendererMode = loadLayout().rendererMode === 'buffer' ? 'buffer' : 'safe';
 function clampFontSize(value) { return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(value * 10) / 10)); }
 function toB64(bytes) { let s=''; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); }
 function fromB64(b64) { const s=atob(b64); const out=new Uint8Array(s.length); for(let i=0;i<s.length;i++) out[i]=s.charCodeAt(i); return out; }
@@ -676,6 +676,7 @@ class XtermCompat {
     this.textarea = this.term.textarea;
     this.canvas = host.querySelector('.xterm-screen canvas') || host;
     this.dataHandlers = [];
+    this.filterBuffer = '';
     this.term.onData(data => this.emitData(data));
     this.fit();
   }
@@ -685,9 +686,22 @@ class XtermCompat {
   set cols(_) {}
   onData(cb) { this.dataHandlers.push(cb); }
   emitData(data) { for (const cb of this.dataHandlers) cb(data); }
-  fit() { this.term.options.fontSize = this.options.fontSize; this.fitAddon.fit(); if (this.term.rows > 4) this.term.resize(this.term.cols, this.term.rows - 1); this.refresh(); }
+  fit() { this.term.options.fontSize = this.options.fontSize; this.fitAddon.fit(); this.refresh(); }
   focus() { this.term.focus(); }
-  write(text, cb) { this.term.write(text, cb); }
+  filterOutput(text) {
+    let input = this.filterBuffer + text;
+    this.filterBuffer = '';
+    const lastEsc = Math.max(input.lastIndexOf(''), input.lastIndexOf(''));
+    if (lastEsc >= 0 && input.length - lastEsc < 32 && !/[A-Za-z~]$/.test(input.slice(lastEsc))) {
+      this.filterBuffer = input.slice(lastEsc);
+      input = input.slice(0, lastEsc);
+    }
+    return input
+      .replace(/\[\?(?:47|1047|1049)[hl]/g, '')
+      .replace(/\[\?(?:47|1047|1049);?\d*[hl]/g, '')
+      .replace(/\[\?\d*;?(?:47|1047|1049)[hl]/g, '');
+  }
+  write(text, cb) { this.term.write(this.filterOutput(text), cb); }
   clear() { this.term.clear(); }
   refresh() { try { this.term.clearTextureAtlas(); this.term.refresh(0, this.term.rows - 1); } catch (_) {} }
   scrollView(delta) { try { this.term.scrollLines(delta); } catch (_) {} }
@@ -989,7 +1003,7 @@ const sessions = document.getElementById('sessions');
 function refreshSessions() { for (const [i,b] of [...sessions.children].entries()) b.classList.toggle('active', i === active().session); }
 for (let i=0; i<4; i++) { const b=document.createElement('button'); b.textContent='S'+(i+1); b.onclick=()=>switchPaneSession(activePane, i, true); sessions.appendChild(b); }
 refreshSessions();
-function refreshModeButton() { const b = document.getElementById('mode'); b.textContent = rendererMode === 'safe' ? 'Safe' : 'Buffer'; b.classList.toggle('active', rendererMode === 'safe'); }
+function refreshModeButton() { const b = document.getElementById('mode'); b.textContent = rendererMode === 'safe' ? 'Xterm' : 'Buffer'; b.classList.toggle('active', rendererMode === 'buffer'); }
 document.getElementById('mode').onclick = () => { rendererMode = rendererMode === 'safe' ? 'buffer' : 'safe'; saveLayout(); location.reload(); };
 refreshModeButton();
 document.getElementById('split').onclick = () => { split = !split; document.body.classList.toggle('single', !split); document.getElementById('split').classList.toggle('active', split); saveLayout(); setTimeout(() => fitAll('split'), REFRESH_AFTER_FIT_MS); };
