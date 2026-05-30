@@ -130,6 +130,16 @@ class VirtualTerm {
   initLines() { this.lines = Array.from({length:this.rows}, () => this.blankLine()); }
   blankLine(attr) { return Array.from({length:this.cols}, () => blankCell(attr)); }
   lineToText(line) { return line.map(c => c.cont ? '' : c.ch).join('').replace(/[ \t]+$/g, ''); }
+  isBlankLine(line) { return !line || line.every(c => c.cont || c.ch === ' '); }
+  pushScrollbackLine(line) {
+    if (!line || this.isBlankLine(line)) return;
+    this.scrollback.push(line.map(cell => ({ ch:cell.ch, cont:cell.cont, attr:cloneAttr(cell.attr) })));
+    if (this.scrollback.length > SCROLLBACK_LIMIT) this.scrollback.splice(0, this.scrollback.length - SCROLLBACK_LIMIT);
+  }
+  pushScreenToScrollback() {
+    if (!this.lines) return;
+    for (const line of this.lines) this.pushScrollbackLine(line);
+  }
   textToLine(text) {
     const line = this.blankLine();
     let x = 0;
@@ -186,12 +196,12 @@ class VirtualTerm {
     } catch (_) {}
   }
   schedulePersist() {
-    if (!this.persistKey || this.isAltScreen) return;
+    if (!this.persistKey) return;
     if (this.persistTimer) clearTimeout(this.persistTimer);
     this.persistTimer = setTimeout(() => this.persistNow(), PERSIST_DELAY_MS);
   }
   persistNow() {
-    if (!this.persistKey || this.isAltScreen) return;
+    if (!this.persistKey) return;
     try {
       const payload = {
         cols:this.cols,
@@ -223,15 +233,18 @@ class VirtualTerm {
     if (enabled === this.isAltScreen) return;
     this.viewOffset = 0;
     if (enabled) {
+      this.pushScreenToScrollback();
       this.normalScreen = this.saveScreen();
       this.isAltScreen = true;
       if (this.altScreen && !clear) this.restoreScreen(this.altScreen);
-      else { this.x = 0; this.y = 0; this.initLines(); }
+      else { this.x = 0; this.y = 0; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.initLines(); }
     } else {
+      this.pushScreenToScrollback();
       this.altScreen = this.saveScreen();
       this.isAltScreen = false;
-      if (!this.restoreScreen(this.normalScreen)) { this.x = 0; this.y = 0; this.initLines(); }
+      if (!this.restoreScreen(this.normalScreen)) { this.x = 0; this.y = 0; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.initLines(); }
     }
+    this.schedulePersist();
   }
   fit() {
     const width = Math.max(1, this.host.clientWidth || this.host.getBoundingClientRect().width);
@@ -263,7 +276,7 @@ class VirtualTerm {
     if (rows > oldRows) {
       const addCount = rows - oldRows;
       for (let i=0; i<addCount; i++) {
-        const restored = !this.isAltScreen && this.scrollback.length ? this.scrollback.pop() : this.blankLine();
+        const restored = this.scrollback.length ? this.scrollback.pop() : this.blankLine();
         this.lines.unshift(restored);
       }
       this.y += addCount;
@@ -305,7 +318,7 @@ class VirtualTerm {
   setCompositionPreview(text) { this.compositionPreview = text || ''; this.requestRender(); }
   clearTextureAtlas() {}
   refresh() { this.requestRender(); }
-  clear() { this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.scrollback = []; this.viewOffset = 0; this.initLines(); this.clearSelection(); this.schedulePersist(); this.requestRender(); }
+  clear() { this.pushScreenToScrollback(); this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.viewOffset = 0; this.initLines(); this.clearSelection(); this.schedulePersist(); this.requestRender(); }
   select(x, y, len) { this.selection = { start:y * this.cols + x, end:y * this.cols + x + Math.max(1, len) - 1 }; this.requestRender(); }
   setSelectionRange(start, end) { this.selection = { start, end }; this.requestRender(); }
   clearSelection() { this.selection = null; this.requestRender(); }
@@ -391,10 +404,7 @@ class VirtualTerm {
     bottom = Math.max(top, Math.min(this.rows - 1, bottom));
     for (let i=0;i<n;i++) {
       const removed = this.lines.splice(top, 1)[0];
-      if (top === 0 && bottom === this.rows - 1 && !this.isAltScreen) {
-        this.scrollback.push(removed);
-        if (this.scrollback.length > SCROLLBACK_LIMIT) this.scrollback.shift();
-      }
+      if (top === 0 && bottom === this.rows - 1) this.pushScrollbackLine(removed);
       this.lines.splice(bottom, 0, this.blankLine());
     }
     this.schedulePersist();
@@ -468,7 +478,7 @@ class VirtualTerm {
     this.wrapPending = false;
   }
   eraseDisplay(mode) {
-    if (mode === 2 || mode === 3) { this.initLines(); this.viewOffset = 0; this.schedulePersist(); return; }
+    if (mode === 2 || mode === 3) { this.pushScreenToScrollback(); this.initLines(); this.viewOffset = 0; this.schedulePersist(); return; }
     if (mode === 0) { this.eraseLine(0); for (let y=this.y+1; y<this.rows; y++) this.lines[y] = this.blankLine(); }
     if (mode === 1) { for (let y=0; y<this.y; y++) this.lines[y] = this.blankLine(); this.eraseLine(1); }
   }
@@ -502,7 +512,6 @@ class VirtualTerm {
     }
   }
   scrollView(delta) {
-    if (this.isAltScreen) return;
     const max = this.scrollback.length;
     this.viewOffset = Math.max(0, Math.min(max, this.viewOffset + delta));
     this.requestRender();
