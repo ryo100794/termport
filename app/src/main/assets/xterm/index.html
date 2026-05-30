@@ -108,7 +108,7 @@ class VirtualTerm {
     this.host.textContent = '';
     this.host.appendChild(this.canvas);
     this.host.appendChild(this.textarea);
-    this.rows = DEFAULT_ROWS; this.cols = DEFAULT_COLS; this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.scrollTop = 0; this.scrollBottom = this.rows - 1;
+    this.rows = DEFAULT_ROWS; this.cols = DEFAULT_COLS; this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1;
     this.saved = { x:0, y:0 };
     this.attr = cloneAttr(VirtualTerm.defaultAttr);
     this.lines = [];
@@ -158,10 +158,12 @@ class VirtualTerm {
     this.persistSession = Number(String(key).replace(/^session-/, '')) || 0;
     this.scrollback = [];
     this.viewOffset = 0;
-    this.x = 0;
-    this.y = 0;
-    this.wrapPending = false;
+    this.setCursor(0, 0);
     this.autoWrap = true;
+    this.insertMode = false;
+    this.originMode = false;
+    this.cursorVisible = true;
+    this.lastChar = ' ';
     this.scrollTop = 0; this.scrollBottom = this.rows - 1;
     this.attr = cloneAttr(VirtualTerm.defaultAttr);
     this.initLines();
@@ -213,7 +215,7 @@ class VirtualTerm {
     } catch (_) {}
   }
   cloneLines(lines=this.lines) { return lines.map(line => line.map(cell => ({ ch:cell.ch, cont:cell.cont, attr:cloneAttr(cell.attr) }))); }
-  saveScreen() { return { lines:this.cloneLines(), x:this.x, y:this.y, scrollTop:this.scrollTop, scrollBottom:this.scrollBottom, attr:cloneAttr(this.attr), saved:{x:this.saved.x, y:this.saved.y} }; }
+  saveScreen() { return { lines:this.cloneLines(), x:this.x, y:this.y, scrollTop:this.scrollTop, scrollBottom:this.scrollBottom, autoWrap:this.autoWrap, insertMode:this.insertMode, originMode:this.originMode, cursorVisible:this.cursorVisible, attr:cloneAttr(this.attr), saved:{x:this.saved.x, y:this.saved.y} }; }
   restoreScreen(screen) {
     if (!screen) return false;
     this.lines = this.cloneLines(screen.lines);
@@ -223,6 +225,10 @@ class VirtualTerm {
     this.x = Math.max(0, Math.min(this.cols - 1, screen.x || 0));
     this.y = Math.max(0, Math.min(this.rows - 1, screen.y || 0));
     this.wrapPending = false;
+    this.autoWrap = screen.autoWrap ?? this.autoWrap;
+    this.insertMode = screen.insertMode ?? false;
+    this.originMode = screen.originMode ?? false;
+    this.cursorVisible = screen.cursorVisible ?? true;
     this.scrollTop = Math.max(0, Math.min(this.rows - 1, screen.scrollTop ?? 0));
     this.scrollBottom = Math.max(this.scrollTop, Math.min(this.rows - 1, screen.scrollBottom ?? (this.rows - 1)));
     this.attr = cloneAttr(screen.attr || VirtualTerm.defaultAttr);
@@ -284,10 +290,7 @@ class VirtualTerm {
       const removedCount = oldRows - rows;
       for (let i=0; i<removedCount; i++) {
         const removed = this.lines.shift();
-        if (removed && !this.isAltScreen) {
-          this.scrollback.push(removed);
-          if (this.scrollback.length > SCROLLBACK_LIMIT) this.scrollback.shift();
-        }
+        this.pushScrollbackLine(removed);
       }
       this.y = Math.max(0, this.y - removedCount);
     }
@@ -318,7 +321,7 @@ class VirtualTerm {
   setCompositionPreview(text) { this.compositionPreview = text || ''; this.requestRender(); }
   clearTextureAtlas() {}
   refresh() { this.requestRender(); }
-  clear() { this.pushScreenToScrollback(); this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.viewOffset = 0; this.initLines(); this.clearSelection(); this.schedulePersist(); this.requestRender(); }
+  clear() { this.pushScreenToScrollback(); this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.viewOffset = 0; this.initLines(); this.clearSelection(); this.schedulePersist(); this.requestRender(); }
   select(x, y, len) { this.selection = { start:y * this.cols + x, end:y * this.cols + x + Math.max(1, len) - 1 }; this.requestRender(); }
   setSelectionRange(start, end) { this.selection = { start, end }; this.requestRender(); }
   clearSelection() { this.selection = null; this.requestRender(); }
@@ -387,8 +390,10 @@ class VirtualTerm {
     if (w <= 0) return;
     if (this.wrapPending) { this.x = 0; this.lineFeed(); this.wrapPending = false; }
     if (w === 2 && this.x === this.cols - 1 && this.autoWrap) { this.x = 0; this.lineFeed(); }
+    if (this.insertMode) this.insertChars(w);
     this.clearWideAt(this.x, this.y);
     this.lines[this.y][this.x] = { ch, attr: cloneAttr(this.attr) };
+    this.lastChar = ch;
     if (w === 2 && this.x + 1 < this.cols) this.lines[this.y][this.x + 1] = { ch:' ', attr: cloneAttr(this.attr), cont:true };
     this.x += w;
     if (this.x >= this.cols) { this.x = this.cols - 1; this.wrapPending = !!this.autoWrap; }
@@ -417,6 +422,23 @@ class VirtualTerm {
       this.lines.splice(top, 0, this.blankLine());
     }
   }
+  setCursor(row, col) {
+    const base = this.originMode ? this.scrollTop : 0;
+    const limit = this.originMode ? this.scrollBottom : this.rows - 1;
+    this.y = Math.max(base, Math.min(limit, base + row));
+    this.x = Math.max(0, Math.min(this.cols - 1, col));
+    this.wrapPending = false;
+  }
+  setPrivateMode(mode, enabled) {
+    if (mode === 6) {
+      this.originMode = enabled;
+      this.setCursor(0, 0);
+    } else if (mode === 7) this.autoWrap = enabled;
+    else if (mode === 25) this.cursorVisible = enabled;
+  }
+  setAnsiMode(mode, enabled) {
+    if (mode === 4) this.insertMode = enabled;
+  }
   handleEsc(ch) {
     if (ch === 'c') this.clear();
     else if (ch === '7') this.saved = { x:this.x, y:this.y };
@@ -434,7 +456,7 @@ class VirtualTerm {
     if ((final === 'h' || final === 'l') && /^\?/.test(raw)) {
       const enabled = final === 'h';
       const modes = raw.slice(1).split(';').map(v => Number(v) || 0);
-      if (modes.includes(7)) this.autoWrap = enabled;
+      for (const mode of modes) this.setPrivateMode(mode, enabled);
       if (modes.some(v => v === 47 || v === 1047 || v === 1049)) {
         this.setAltScreen(enabled, modes.includes(1049) || modes.includes(1047));
         return;
@@ -444,6 +466,7 @@ class VirtualTerm {
     const p = this.parseParams(raw);
     const n = (i, d=1) => p[i] || d;
     if ('ABCDEGHFfHd`r'.includes(final)) this.wrapPending = false;
+    if (final === 'h' || final === 'l') { for (const mode of p) this.setAnsiMode(mode, final === 'h'); return; }
     if (final === 'A') this.y = Math.max(0, this.y - n(0));
     else if (final === 'B') this.y = Math.min(this.rows - 1, this.y + n(0));
     else if (final === 'C') this.x = Math.min(this.cols - 1, this.x + n(0));
@@ -451,8 +474,8 @@ class VirtualTerm {
     else if (final === 'G' || final === '`') this.x = Math.max(0, Math.min(this.cols - 1, n(0) - 1));
     else if (final === 'E') { this.y = Math.min(this.rows - 1, this.y + n(0)); this.x = 0; }
     else if (final === 'F') { this.y = Math.max(0, this.y - n(0)); this.x = 0; }
-    else if (final === 'd') this.y = Math.max(0, Math.min(this.rows - 1, n(0) - 1));
-    else if (final === 'H' || final === 'f') { this.y = Math.max(0, Math.min(this.rows - 1, n(0) - 1)); this.x = Math.max(0, Math.min(this.cols - 1, n(1) - 1)); }
+    else if (final === 'd') this.setCursor(n(0) - 1, this.x);
+    else if (final === 'H' || final === 'f') this.setCursor(n(0) - 1, n(1) - 1);
     else if (final === 'J') this.eraseDisplay(p[0] || 0);
     else if (final === 'K') this.eraseLine(p[0] || 0);
     else if (final === 'm') this.sgr(p.length ? p : [0]);
@@ -464,6 +487,7 @@ class VirtualTerm {
     else if (final === 'P') this.deleteChars(n(0));
     else if (final === '@') this.insertChars(n(0));
     else if (final === 'X') this.eraseChars(n(0));
+    else if (final === 'b') { const count = n(0); for (let i=0; i<count; i++) this.putChar(this.lastChar || ' '); }
     else if (final === 'S') this.scrollUp(n(0), this.scrollTop, this.scrollBottom);
     else if (final === 'T') this.scrollDown(n(0), this.scrollTop, this.scrollBottom);
   }
@@ -627,7 +651,7 @@ class VirtualTerm {
       }
     }
 
-    if (!this.viewOffset && document.activeElement === this.textarea) {
+    if (!this.viewOffset && this.cursorVisible && document.activeElement === this.textarea) {
       ctx.fillStyle = 'rgba(255,255,255,.55)';
       ctx.fillRect(this.x * this.charW, this.y * this.charH, this.charW, this.charH);
     }
@@ -699,14 +723,20 @@ function active() { return panes[activePane]; }
 function refocusActiveSoon() { setTimeout(() => { try { active().term.focus(); } catch (_) {} }, REFOCUS_DELAY_MS); }
 function clearActiveSelection() { try { active().term.clearSelection(); } catch (_) {} }
 function sendText(text) { if (!text || selecting || Date.now() < selectionInputBlockUntil) return; clearActiveSelection(); Android.writeBase64(active().session, toB64(enc.encode(text))); }
-function sendResize(index) { const p = panes[index]; Android.resize(p.session, p.term.rows, p.term.cols); }
+function sendResize(index) {
+  const p = panes[index];
+  const rows = Math.max(2, p.term.rows), cols = Math.max(2, p.term.cols);
+  if (p.lastRows === rows && p.lastCols === cols) return;
+  p.lastRows = rows; p.lastCols = cols;
+  Android.resize(p.session, rows, cols);
+}
 function fitAll(reason='layout') {
-  const notifyPty = reason !== 'keyboard';
+  applyViewportHeight();
   panes.forEach((p, i) => {
     p.term.options.fontSize = fontSize;
     p.term.fit();
     p.term.refresh();
-    if (notifyPty) sendResize(i);
+    sendResize(i);
   });
 }
 function setFontSize(value) { fontSize = clampFontSize(value); fitAll('font'); saveLayout(); }
@@ -717,8 +747,17 @@ let resizeTimer = null;
 function viewportHeight() {
   return Math.round((window.visualViewport && window.visualViewport.height) || window.innerHeight || 0);
 }
+function applyViewportHeight() {
+  const h = viewportHeight();
+  if (h > 0) {
+    document.documentElement.style.height = `${h}px`;
+    document.body.style.height = `${h}px`;
+  }
+}
+applyViewportHeight();
 let lastViewportHeight = viewportHeight();
 function scheduleWindowFit() {
+  applyViewportHeight();
   const nextHeight = viewportHeight();
   const delta = Math.abs(nextHeight - lastViewportHeight);
   lastViewportHeight = nextHeight;
