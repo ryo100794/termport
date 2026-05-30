@@ -252,15 +252,23 @@ class VirtualTerm {
   font() { return `${this.options.fontSize}px "Noto Sans Mono CJK JP","Droid Sans Mono","Roboto Mono",monospace`; }
   resize(cols, rows) {
     cols = Math.max(8, Math.floor(cols)); rows = Math.max(4, Math.floor(rows));
+    const oldRows = this.rows;
+    const oldScrollFull = this.scrollTop === 0 && this.scrollBottom === oldRows - 1;
     if (cols !== this.cols) {
       for (const line of this.lines) {
         while (line.length < cols) line.push(blankCell());
         line.length = cols;
       }
     }
-    if (rows > this.rows) while (this.lines.length < rows) this.lines.push(this.blankLine());
-    if (rows < this.rows) {
-      const removedCount = this.rows - rows;
+    if (rows > oldRows) {
+      const addCount = rows - oldRows;
+      for (let i=0; i<addCount; i++) {
+        const restored = !this.isAltScreen && this.scrollback.length ? this.scrollback.pop() : this.blankLine();
+        this.lines.unshift(restored);
+      }
+      this.y += addCount;
+    } else if (rows < oldRows) {
+      const removedCount = oldRows - rows;
       for (let i=0; i<removedCount; i++) {
         const removed = this.lines.shift();
         if (removed && !this.isAltScreen) {
@@ -270,9 +278,16 @@ class VirtualTerm {
       }
       this.y = Math.max(0, this.y - removedCount);
     }
+    while (this.lines.length < rows) this.lines.unshift(this.blankLine());
+    while (this.lines.length > rows) this.lines.shift();
     this.cols = cols; this.rows = rows;
-    this.scrollTop = Math.max(0, Math.min(this.scrollTop || 0, this.rows - 1));
-    this.scrollBottom = Math.max(this.scrollTop, Math.min(this.scrollBottom ?? (this.rows - 1), this.rows - 1));
+    if (oldScrollFull) {
+      this.scrollTop = 0;
+      this.scrollBottom = this.rows - 1;
+    } else {
+      this.scrollTop = Math.max(0, Math.min(this.scrollTop || 0, this.rows - 1));
+      this.scrollBottom = Math.max(this.scrollTop, Math.min(this.scrollBottom === oldRows - 1 ? this.rows - 1 : this.scrollBottom, this.rows - 1));
+    }
     this.x = Math.min(this.x, this.cols - 1); this.y = Math.min(this.y, this.rows - 1);
     const dpr = window.devicePixelRatio || 1;
     this.pixelW = this.fitPixelW || this.cols * this.charW;
