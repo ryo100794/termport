@@ -1,0 +1,886 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<link rel="stylesheet" href="xterm.css">
+<style>
+  html, body { margin:0; height:100%; background:#101214; overflow:hidden; font-family:system-ui,sans-serif; }
+  body { display:flex; flex-direction:column; }
+  #top { display:flex; gap:6px; align-items:center; padding:6px 8px; background:#181b1f; color:#f1f3f4; font-size:13px; }
+  #status { flex:1 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #sessions { display:flex; gap:4px; overflow-x:auto; padding:5px 6px; background:#111418; scrollbar-width:none; }
+  #keys { display:grid; grid-auto-flow:column; grid-template-rows:repeat(2,28px); grid-auto-columns:max-content; gap:3px; overflow-x:auto; padding:4px 6px; background:#111418; scrollbar-width:none; }
+  #sessions::-webkit-scrollbar, #keys::-webkit-scrollbar { display:none; }
+  #terms { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; background:#050505; }
+  .pane { flex:1 1 0; min-height:0; display:flex; flex-direction:column; border-top:1px solid #293039; }
+  .pane:first-child { border-top:0; }
+  .pane.active .paneTitle { background:#0e5f9d; }
+  .paneTitle { flex:0 0 auto; height:3px; padding:0; overflow:hidden; background:#15181c; color:transparent; font-size:0; line-height:0; }
+  .term { flex:1 1 auto; min-height:0; overflow:hidden; background:#050505; touch-action:none; position:relative; }
+  .term canvas { display:block; background:#050505; }
+  .term textarea { position:absolute; left:0; top:0; width:100%; height:100%; opacity:.01; border:0; padding:0; resize:none; color:transparent; background:transparent; caret-color:transparent; outline:0; z-index:1; }
+  body.single #pane1 { display:none; }
+  button { flex:0 0 auto; min-width:32px; height:28px; padding:0 6px; border:1px solid #3a3a3a; border-radius:5px; background:#23272d; color:#eee; font:10.5px system-ui,sans-serif; white-space:nowrap; }
+  button.active { background:#0e5f9d; border-color:#58a6ff; }
+  button:active { background:#444; }
+  .keySpacer { width:32px; height:28px; }
+  .keyGap { width:8px; height:28px; }
+  #terms, .term { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+</style>
+</head>
+<body>
+  <div id="top"><div id="status">starting</div><button id="mode">Buffer</button><button id="split">Split</button><button id="copySel">Copy</button><button id="clearSel">Clear</button><button id="redraw">Redraw</button><button id="setup">Setup</button><button id="skydnir">Skydnir</button><button id="connect">Connect</button></div>
+  <div id="sessions"></div>
+  <div id="terms">
+    <div class="pane active" id="pane0"><div class="paneTitle">S1</div><div class="term" id="term0"></div></div>
+    <div class="pane" id="pane1"><div class="paneTitle">S2</div><div class="term" id="term1"></div></div>
+  </div>
+  <div id="keys"></div>
+<script src="xterm.js"></script>
+<script src="xterm-addon-fit.js"></script>
+<script>
+const enc = new TextEncoder();
+const statusEl = document.getElementById('status');
+const DEFAULT_FONT_SIZE = 13;
+const MIN_FONT_SIZE = 6;
+const MAX_FONT_SIZE = 28;
+const DEFAULT_ROWS = 24;
+const DEFAULT_COLS = 80;
+const SCROLLBACK_LIMIT = 2000;
+const PERSIST_DELAY_MS = 250;
+const REFOCUS_DELAY_MS = 30;
+const REFRESH_AFTER_FIT_MS = 80;
+const RESIZE_FAST_DELAY_MS = 80;
+const RESIZE_SLOW_DELAY_MS = 180;
+const RESIZE_KEYBOARD_DELTA = 40;
+const IME_SUPPRESS_MS = 180;
+const IMMEDIATE_DEDUPE_MS = 80;
+const IME_BLUR_REFOCUS_MS = 40;
+const IME_POLL_MS = 25;
+const LONG_PRESS_MS = 430;
+const SELECTION_RELEASE_BLOCK_MS = 160;
+const SELECTION_ACTIVE_BLOCK_MS = 100000;
+const SCROLL_TOUCH_THRESHOLD_PX = 18;
+const POINTER_MOVE_CANCEL_PX = 14;
+const XTERM_SCROLLBACK = 5000;
+let fontSize = DEFAULT_FONT_SIZE;
+let activePane = 0;
+let split = true;
+let selecting = false;
+let selectionInputBlockUntil = 0;
+let imeSuppressText = '';
+let imeSuppressUntil = 0;
+const storageKey = 'imeConsoleLayoutV1';
+const scrollbackStoragePrefix = 'imeConsoleScrollbackV1:';
+function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split, activePane, fontSize, rendererMode, sessions: panes.map(p => p.session) })); } catch (_) {} }
+function loadLayout() { try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (_) { return {}; } }
+let rendererMode = loadLayout().rendererMode === 'safe' ? 'safe' : 'buffer';
+function clampFontSize(value) { return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(value * 10) / 10)); }
+function toB64(bytes) { let s=''; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); }
+function fromB64(b64) { const s=atob(b64); const out=new Uint8Array(s.length); for(let i=0;i<s.length;i++) out[i]=s.charCodeAt(i); return out; }
+function setStatus(text) { statusEl.textContent = text; }
+window.setBridgeStatus = setStatus;
+
+const palette = {
+  defaultFg:'#e8eaed', defaultBg:'#050505', cursor:'#ffffff', selection:'#2f7edb',
+  normal:['#050505','#f47067','#57ab5a','#c69026','#539bf5','#b083f0','#39c5cf','#d0d7de'],
+  bright:['#6e7681','#ff7b72','#7ee787','#d29922','#79c0ff','#d2a8ff','#56d4dd','#f0f6fc']
+};
+function cloneAttr(a) { return { fg:a.fg, bg:a.bg, bold:a.bold, inverse:a.inverse }; }
+function blankCell(attr) { return { ch:' ', attr: cloneAttr(attr || VirtualTerm.defaultAttr) }; }
+function charWidth(ch) {
+  const cp = ch.codePointAt(0) || 0;
+  if (cp === 0) return 0;
+  if (cp < 0x1100) return 1;
+  return 2;
+}
+class VirtualTerm {
+  static defaultAttr = { fg:palette.defaultFg, bg:palette.defaultBg, bold:false, inverse:false };
+  constructor(host, opts={}) {
+    this.host = host;
+    this.element = host;
+    this.options = { fontSize: opts.fontSize || DEFAULT_FONT_SIZE };
+    this.canvas = document.createElement('canvas');
+    this.ctx = this.canvas.getContext('2d');
+    this.textarea = document.createElement('textarea');
+    this.textarea.setAttribute('inputmode', 'text');
+    this.host.textContent = '';
+    this.host.appendChild(this.canvas);
+    this.host.appendChild(this.textarea);
+    this.rows = DEFAULT_ROWS; this.cols = DEFAULT_COLS; this.x = 0; this.y = 0; this.wrapPending = false;
+    this.saved = { x:0, y:0 };
+    this.attr = cloneAttr(VirtualTerm.defaultAttr);
+    this.lines = [];
+    this.normalScreen = null;
+    this.altScreen = null;
+    this.isAltScreen = false;
+    this.state = 'normal'; this.esc = ''; this.csi = ''; this.oscEsc = false;
+    this.pendingRender = false; this.dataHandlers = [];
+    this.selection = null;
+    this.compositionPreview = '';
+    this.scrollback = [];
+    this.viewOffset = 0;
+    this.persistKey = null;
+    this.persistTimer = null;
+    this.initLines();
+    this.installKeyboard();
+    this.fit();
+  }
+  initLines() { this.lines = Array.from({length:this.rows}, () => this.blankLine()); }
+  blankLine(attr) { return Array.from({length:this.cols}, () => blankCell(attr)); }
+  lineToText(line) { return line.map(c => c.cont ? '' : c.ch).join('').replace(/[ \t]+$/g, ''); }
+  textToLine(text) {
+    const line = this.blankLine();
+    let x = 0;
+    for (const ch of text) {
+      if (x >= this.cols) break;
+      const w = charWidth(ch);
+      line[x] = { ch, attr: cloneAttr(VirtualTerm.defaultAttr) };
+      if (w === 2 && x + 1 < this.cols) line[x + 1] = { ch:' ', attr: cloneAttr(VirtualTerm.defaultAttr), cont:true };
+      x += Math.max(1, w);
+    }
+    return line;
+  }
+  setPersistKey(key) {
+    if (this.persistKey && this.persistKey !== key) this.persistNow();
+    this.persistKey = key;
+    this.persistSession = Number(String(key).replace(/^session-/, '')) || 0;
+    this.scrollback = [];
+    this.viewOffset = 0;
+    this.x = 0;
+    this.y = 0;
+    this.wrapPending = false;
+    this.attr = cloneAttr(VirtualTerm.defaultAttr);
+    this.initLines();
+    this.restorePersisted();
+    this.requestRender();
+  }
+  loadPersistedJson() {
+    try {
+      if (window.Android && Android.loadScrollback) return Android.loadScrollback(this.persistSession || 0) || '';
+    } catch (_) {}
+    try { return localStorage.getItem(scrollbackStoragePrefix + this.persistKey) || ''; } catch (_) { return ''; }
+  }
+  savePersistedJson(json) {
+    try {
+      if (window.Android && Android.saveScrollback) { Android.saveScrollback(this.persistSession || 0, json); return; }
+    } catch (_) {}
+    try { localStorage.setItem(scrollbackStoragePrefix + this.persistKey, json); } catch (_) {}
+  }
+  restorePersisted() {
+    if (!this.persistKey) return;
+    try {
+      const raw = this.loadPersistedJson();
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      const lines = Array.isArray(obj.lines) ? obj.lines.slice(-SCROLLBACK_LIMIT) : [];
+      const screen = Array.isArray(obj.screen) ? obj.screen : [];
+      this.scrollback = lines.map(t => this.textToLine(String(t)));
+      this.initLines();
+      const tail = screen.slice(-this.rows);
+      for (let i=0; i<tail.length; i++) this.lines[this.rows - tail.length + i] = this.textToLine(String(tail[i]));
+      this.x = 0; this.y = this.rows - 1; this.viewOffset = 0;
+    } catch (_) {}
+  }
+  schedulePersist() {
+    if (!this.persistKey || this.isAltScreen) return;
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => this.persistNow(), PERSIST_DELAY_MS);
+  }
+  persistNow() {
+    if (!this.persistKey || this.isAltScreen) return;
+    try {
+      const payload = {
+        cols:this.cols,
+        rows:this.rows,
+        lines:this.scrollback.slice(-SCROLLBACK_LIMIT).map(line => this.lineToText(line)),
+        screen:this.lines.map(line => this.lineToText(line))
+      };
+      this.savePersistedJson(JSON.stringify(payload));
+    } catch (_) {}
+  }
+  cloneLines(lines=this.lines) { return lines.map(line => line.map(cell => ({ ch:cell.ch, cont:cell.cont, attr:cloneAttr(cell.attr) }))); }
+  saveScreen() { return { lines:this.cloneLines(), x:this.x, y:this.y, attr:cloneAttr(this.attr), saved:{x:this.saved.x, y:this.saved.y} }; }
+  restoreScreen(screen) {
+    if (!screen) return false;
+    this.lines = this.cloneLines(screen.lines);
+    while (this.lines.length < this.rows) this.lines.push(this.blankLine());
+    this.lines.length = this.rows;
+    for (const line of this.lines) { while (line.length < this.cols) line.push(blankCell()); line.length = this.cols; }
+    this.x = Math.max(0, Math.min(this.cols - 1, screen.x || 0));
+    this.y = Math.max(0, Math.min(this.rows - 1, screen.y || 0));
+    this.wrapPending = false;
+    this.attr = cloneAttr(screen.attr || VirtualTerm.defaultAttr);
+    this.saved = screen.saved || {x:0, y:0};
+    return true;
+  }
+  setAltScreen(enabled, clear=true) {
+    if (enabled === this.isAltScreen) return;
+    this.viewOffset = 0;
+    if (enabled) {
+      this.normalScreen = this.saveScreen();
+      this.isAltScreen = true;
+      if (this.altScreen && !clear) this.restoreScreen(this.altScreen);
+      else { this.x = 0; this.y = 0; this.initLines(); }
+    } else {
+      this.altScreen = this.saveScreen();
+      this.isAltScreen = false;
+      if (!this.restoreScreen(this.normalScreen)) { this.x = 0; this.y = 0; this.initLines(); }
+    }
+  }
+  fit() {
+    const width = Math.max(1, this.host.clientWidth || this.host.getBoundingClientRect().width);
+    const height = Math.max(1, this.host.clientHeight || this.host.getBoundingClientRect().height);
+    this.ctx.font = this.font();
+    const asciiW = this.ctx.measureText('0').width || this.ctx.measureText('M').width;
+    const wideW = Math.max(this.ctx.measureText('あ').width, this.ctx.measureText('Ｗ').width, this.ctx.measureText('漢').width);
+    const naturalW = Math.max(4, Math.max(asciiW, wideW / 2, this.options.fontSize * 0.5));
+    const naturalH = Math.max(8, this.options.fontSize * 1.25);
+    const cols = Math.max(8, Math.floor(width / naturalW));
+    const rows = Math.max(4, Math.floor(height / naturalH));
+    this.fitPixelW = width;
+    this.fitPixelH = height;
+    this.charW = width / cols;
+    this.charH = height / rows;
+    this.resize(cols, rows);
+  }
+  font() { return `${this.options.fontSize}px "Noto Sans Mono CJK JP","Droid Sans Mono","Roboto Mono",monospace`; }
+  resize(cols, rows) {
+    cols = Math.max(8, Math.floor(cols)); rows = Math.max(4, Math.floor(rows));
+    if (cols !== this.cols) {
+      for (const line of this.lines) {
+        while (line.length < cols) line.push(blankCell());
+        line.length = cols;
+      }
+    }
+    if (rows > this.rows) while (this.lines.length < rows) this.lines.push(this.blankLine());
+    if (rows < this.rows) {
+      while (this.lines.length > rows) this.lines.pop();
+    }
+    this.cols = cols; this.rows = rows;
+    this.x = Math.min(this.x, this.cols - 1); this.y = Math.min(this.y, this.rows - 1);
+    const dpr = window.devicePixelRatio || 1;
+    this.pixelW = this.fitPixelW || this.cols * this.charW;
+    this.pixelH = this.fitPixelH || this.rows * this.charH;
+    this.canvas.style.width = `${this.pixelW}px`;
+    this.canvas.style.height = `${this.pixelH}px`;
+    this.canvas.width = Math.max(1, Math.ceil(this.pixelW * dpr));
+    this.canvas.height = Math.max(1, Math.ceil(this.pixelH * dpr));
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.requestRender();
+  }
+  onData(cb) { this.dataHandlers.push(cb); }
+  emitData(data) { for (const cb of this.dataHandlers) cb(data); }
+  focus() { try { this.textarea.focus({ preventScroll:true }); } catch (_) { this.textarea.focus(); } this.requestRender(); }
+  setCompositionPreview(text) { this.compositionPreview = text || ''; this.requestRender(); }
+  clearTextureAtlas() {}
+  refresh() { this.requestRender(); }
+  clear() { this.x = 0; this.y = 0; this.wrapPending = false; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.scrollback = []; this.viewOffset = 0; this.initLines(); this.clearSelection(); this.schedulePersist(); this.requestRender(); }
+  select(x, y, len) { this.selection = { start:y * this.cols + x, end:y * this.cols + x + Math.max(1, len) - 1 }; this.requestRender(); }
+  setSelectionRange(start, end) { this.selection = { start, end }; this.requestRender(); }
+  clearSelection() { this.selection = null; this.requestRender(); }
+  getSelection() {
+    if (!this.selection) return '';
+    const a = Math.min(this.selection.start, this.selection.end);
+    const b = Math.max(this.selection.start, this.selection.end);
+    const visible = this.visibleLines();
+    const out = [];
+    for (let idx = a; idx <= b; idx++) {
+      const y = Math.floor(idx / this.cols), x = idx % this.cols;
+      if (y < 0 || y >= this.rows) continue;
+      const cell = visible[y] && visible[y][x];
+      if (cell && !cell.cont) out.push(cell.ch);
+      if (x === this.cols - 1 && idx < b) out.push('\n');
+    }
+    return out.join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]+$/g, '');
+  }
+  installKeyboard() {
+    this.textarea.addEventListener('keydown', ev => {
+      if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      const map = { Enter:'\r', Backspace:'\x7f', Tab:'\t', ArrowUp:'\x1b[A', ArrowDown:'\x1b[B', ArrowLeft:'\x1b[D', ArrowRight:'\x1b[C', Delete:'\x1b[3~', Home:'\x1b[H', End:'\x1b[F', PageUp:'\x1b[5~', PageDown:'\x1b[6~' };
+      if (map[ev.key]) { ev.preventDefault(); this.emitData(map[ev.key]); }
+    }, true);
+  }
+  write(text, cb) { this.parse(text); this.requestRender(); this.schedulePersist(); if (cb) cb(); }
+  parse(text) {
+    for (const ch of text) {
+      if (this.state === 'osc') {
+        if (this.oscEsc && ch === '\\') { this.state = 'normal'; this.oscEsc = false; }
+        else if (ch === '\x07') { this.state = 'normal'; this.oscEsc = false; }
+        else this.oscEsc = ch === '\x1b';
+        continue;
+      }
+      if (this.state === 'esc') {
+        if (ch === '[') { this.state = 'csi'; this.csi = ''; continue; }
+        if (ch === ']') { this.state = 'osc'; this.oscEsc = false; continue; }
+        this.handleEsc(ch); this.state = 'normal'; continue;
+      }
+      if (this.state === 'csi') {
+        if (/[@-~]/.test(ch)) { this.handleCsi(this.csi, ch); this.state = 'normal'; this.csi = ''; }
+        else this.csi += ch;
+        continue;
+      }
+      if (ch === '\x1b') { this.state = 'esc'; continue; }
+      this.putControlOrChar(ch);
+    }
+  }
+  putControlOrChar(ch) {
+    if (ch === '\r') { this.x = 0; this.wrapPending = false; return; }
+    if (ch === '\n') { this.wrapPending = false; this.lineFeed(); return; }
+    if (ch === '\b') { this.wrapPending = false; this.x = Math.max(0, this.x - 1); return; }
+    if (ch === '\t') { this.wrapPending = false; this.x = Math.min(this.cols - 1, this.x + (8 - (this.x % 8))); return; }
+    if (ch < ' ' && ch !== '\t') return;
+    this.putChar(ch);
+  }
+  clearWideAt(x, y) {
+    const line = this.lines[y];
+    if (!line || x < 0 || x >= this.cols) return;
+    if (line[x].cont && x > 0) line[x - 1] = blankCell();
+    if (x + 1 < this.cols && line[x + 1].cont) line[x + 1] = blankCell();
+    line[x] = blankCell();
+  }
+  putChar(ch) {
+    const w = charWidth(ch);
+    if (w <= 0) return;
+    if (this.wrapPending) { this.x = 0; this.lineFeed(); this.wrapPending = false; }
+    if (w === 2 && this.x === this.cols - 1) { this.x = 0; this.lineFeed(); }
+    this.clearWideAt(this.x, this.y);
+    this.lines[this.y][this.x] = { ch, attr: cloneAttr(this.attr) };
+    if (w === 2 && this.x + 1 < this.cols) this.lines[this.y][this.x + 1] = { ch:' ', attr: cloneAttr(this.attr), cont:true };
+    this.x += w;
+    if (this.x >= this.cols) { this.x = this.cols - 1; this.wrapPending = true; }
+  }
+  lineFeed() { if (this.y >= this.rows - 1) this.scrollUp(1); else this.y++; this.viewOffset = 0; this.schedulePersist(); }
+  scrollUp(n=1) { for (let i=0;i<n;i++) { const removed = this.lines.shift(); if (!this.isAltScreen) { this.scrollback.push(removed); if (this.scrollback.length > SCROLLBACK_LIMIT) this.scrollback.shift(); } this.lines.push(this.blankLine()); } this.schedulePersist(); }
+  scrollDown(n=1) { for (let i=0;i<n;i++) { this.lines.pop(); this.lines.unshift(this.blankLine()); } }
+  handleEsc(ch) {
+    if (ch === 'c') this.clear();
+    else if (ch === '7') this.saved = { x:this.x, y:this.y };
+    else if (ch === '8') { this.x = this.saved.x; this.y = this.saved.y; }
+    else if (ch === 'D') this.lineFeed();
+    else if (ch === 'M') { if (this.y === 0) this.scrollDown(1); else this.y--; }
+    else if (ch === 'E') { this.x = 0; this.lineFeed(); }
+  }
+  parseParams(raw) {
+    raw = raw.replace(/^\?/, '');
+    if (!raw) return [0];
+    return raw.split(';').map(v => v === '' ? 0 : Number(v) || 0);
+  }
+  handleCsi(raw, final) {
+    if ((final === 'h' || final === 'l') && /^\?/.test(raw)) {
+      const enabled = final === 'h';
+      const modes = raw.slice(1).split(';').map(v => Number(v) || 0);
+      if (modes.some(v => v === 47 || v === 1047 || v === 1049)) {
+        this.setAltScreen(enabled, modes.includes(1049) || modes.includes(1047));
+        return;
+      }
+      return;
+    }
+    const p = this.parseParams(raw);
+    const n = (i, d=1) => p[i] || d;
+    if ('ABCDGHfH'.includes(final)) this.wrapPending = false;
+    if (final === 'A') this.y = Math.max(0, this.y - n(0));
+    else if (final === 'B') this.y = Math.min(this.rows - 1, this.y + n(0));
+    else if (final === 'C') this.x = Math.min(this.cols - 1, this.x + n(0));
+    else if (final === 'D') this.x = Math.max(0, this.x - n(0));
+    else if (final === 'G') this.x = Math.max(0, Math.min(this.cols - 1, n(0) - 1));
+    else if (final === 'H' || final === 'f') { this.y = Math.max(0, Math.min(this.rows - 1, n(0) - 1)); this.x = Math.max(0, Math.min(this.cols - 1, n(1) - 1)); }
+    else if (final === 'J') this.eraseDisplay(p[0] || 0);
+    else if (final === 'K') this.eraseLine(p[0] || 0);
+    else if (final === 'm') this.sgr(p.length ? p : [0]);
+    else if (final === 's') this.saved = { x:this.x, y:this.y };
+    else if (final === 'u') { this.x = this.saved.x; this.y = this.saved.y; }
+    else if (final === 'L') this.insertLines(n(0));
+    else if (final === 'M') this.deleteLines(n(0));
+    else if (final === 'P') this.deleteChars(n(0));
+    else if (final === '@') this.insertChars(n(0));
+    else if (final === 'X') this.eraseChars(n(0));
+    else if (final === 'S') this.scrollUp(n(0));
+    else if (final === 'T') this.scrollDown(n(0));
+  }
+  eraseDisplay(mode) {
+    if (mode === 2 || mode === 3) { this.initLines(); this.viewOffset = 0; this.schedulePersist(); return; }
+    if (mode === 0) { this.eraseLine(0); for (let y=this.y+1; y<this.rows; y++) this.lines[y] = this.blankLine(); }
+    if (mode === 1) { for (let y=0; y<this.y; y++) this.lines[y] = this.blankLine(); this.eraseLine(1); }
+  }
+  eraseLine(mode) {
+    if (mode === 2) { this.lines[this.y] = this.blankLine(); return; }
+    const start = mode === 1 ? 0 : this.x;
+    const end = mode === 1 ? this.x : this.cols - 1;
+    for (let x=start; x<=end; x++) this.lines[this.y][x] = blankCell();
+  }
+  insertLines(n) { for (let i=0;i<n;i++) { this.lines.splice(this.y, 0, this.blankLine()); this.lines.pop(); } }
+  deleteLines(n) { for (let i=0;i<n;i++) { this.lines.splice(this.y, 1); this.lines.push(this.blankLine()); } }
+  insertChars(n) { const line = this.lines[this.y]; for (let i=0;i<n;i++) line.splice(this.x, 0, blankCell()); line.length = this.cols; }
+  deleteChars(n) { const line = this.lines[this.y]; for (let i=0;i<n;i++) { line.splice(this.x, 1); line.push(blankCell()); } }
+  eraseChars(n) { for (let i=0;i<n && this.x+i<this.cols;i++) this.clearWideAt(this.x+i, this.y); }
+  sgr(params) {
+    for (let i=0; i<params.length; i++) {
+      const c = params[i];
+      if (c === 0) this.attr = cloneAttr(VirtualTerm.defaultAttr);
+      else if (c === 1) this.attr.bold = true;
+      else if (c === 22) this.attr.bold = false;
+      else if (c === 7) this.attr.inverse = true;
+      else if (c === 27) this.attr.inverse = false;
+      else if (c === 39) this.attr.fg = palette.defaultFg;
+      else if (c === 49) this.attr.bg = palette.defaultBg;
+      else if (c >= 30 && c <= 37) this.attr.fg = palette.normal[c - 30];
+      else if (c >= 90 && c <= 97) this.attr.fg = palette.bright[c - 90];
+      else if (c >= 40 && c <= 47) this.attr.bg = palette.normal[c - 40];
+      else if (c >= 100 && c <= 107) this.attr.bg = palette.bright[c - 100];
+      else if ((c === 38 || c === 48) && params[i+1] === 5) { const col = this.color256(params[i+2] || 0); if (c === 38) this.attr.fg = col; else this.attr.bg = col; i += 2; }
+      else if ((c === 38 || c === 48) && params[i+1] === 2) { const col = `rgb(${params[i+2]||0},${params[i+3]||0},${params[i+4]||0})`; if (c === 38) this.attr.fg = col; else this.attr.bg = col; i += 4; }
+    }
+  }
+  scrollView(delta) {
+    if (this.isAltScreen) return;
+    const max = this.scrollback.length;
+    this.viewOffset = Math.max(0, Math.min(max, this.viewOffset + delta));
+    this.requestRender();
+  }
+  visibleLines() {
+    if (!this.viewOffset) return this.lines;
+    const combined = this.scrollback.concat(this.lines);
+    const start = Math.max(0, combined.length - this.rows - this.viewOffset);
+    const out = combined.slice(start, start + this.rows);
+    while (out.length < this.rows) out.unshift(this.blankLine());
+    return out;
+  }
+  color256(n) {
+    if (n < 8) return palette.normal[n];
+    if (n < 16) return palette.bright[n - 8];
+    if (n >= 232) { const v = 8 + (n - 232) * 10; return `rgb(${v},${v},${v})`; }
+    n -= 16; const r = Math.floor(n / 36), g = Math.floor(n / 6) % 6, b = n % 6;
+    const cv = x => x === 0 ? 0 : 55 + x * 40;
+    return `rgb(${cv(r)},${cv(g)},${cv(b)})`;
+  }
+  requestRender() { if (this.pendingRender) return; this.pendingRender = true; requestAnimationFrame(() => { this.pendingRender = false; this.render(); }); }
+  isSelected(x, y) {
+    if (!this.selection) return false;
+    const idx = y * this.cols + x;
+    return idx >= Math.min(this.selection.start, this.selection.end) && idx <= Math.max(this.selection.start, this.selection.end);
+  }
+  contrastFg(fg, bg) {
+    if (!fg || !bg) return fg || palette.defaultFg;
+    if (String(fg).toLowerCase() === String(bg).toLowerCase()) return bg === palette.defaultBg ? palette.defaultFg : palette.defaultBg;
+    return fg;
+  }
+  drawGlyph(ch, x, y, fg, bold) {
+    const ctx = this.ctx;
+    const px = x * this.charW;
+    const py = y * this.charH + Math.max(0, (this.charH - this.options.fontSize) / 2);
+    const w = charWidth(ch);
+    const font = `${bold ? '700 ' : ''}${this.font()}`;
+    const target = this.charW * w;
+    ctx.font = font;
+    ctx.fillStyle = fg;
+    const measured = Math.max(1, ctx.measureText(ch).width);
+    const scale = Math.min(1, target / measured);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(px, y * this.charH, target, this.charH);
+    ctx.clip();
+    ctx.translate(px, 0);
+    ctx.scale(scale, 1);
+    ctx.fillText(ch, 0, py);
+    ctx.restore();
+  }
+  render() {
+    const ctx = this.ctx;
+    ctx.font = this.font();
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = palette.defaultBg;
+    ctx.fillRect(0, 0, this.pixelW || this.cols * this.charW, this.pixelH || this.rows * this.charH);
+    const visible = this.visibleLines();
+    for (let y=0; y<this.rows; y++) {
+      for (let x=0; x<this.cols; x++) {
+        const cell = visible[y][x];
+        let bg = cell.attr.bg;
+        if (cell.attr.inverse) bg = cell.attr.fg;
+        if (this.isSelected(x, y)) bg = palette.selection;
+        if (bg !== palette.defaultBg) { ctx.fillStyle = bg; ctx.fillRect(x*this.charW, y*this.charH, this.charW, this.charH); }
+      }
+    }
+    for (let y=0; y<this.rows; y++) {
+      for (let x=0; x<this.cols; x++) {
+        const cell = visible[y][x];
+        if (cell.ch === ' ' || cell.cont) continue;
+        let fg = cell.attr.fg, bg = cell.attr.bg;
+        if (cell.attr.inverse) [fg, bg] = [bg, fg];
+        fg = this.contrastFg(fg, bg);
+        this.drawGlyph(cell.ch, x, y, fg, cell.attr.bold);
+      }
+    }
+
+    if (!this.viewOffset && this.compositionPreview) {
+      let px = this.x;
+      const py = this.y;
+      for (const ch of this.compositionPreview) {
+        if (px >= this.cols) break;
+        const w = charWidth(ch);
+        ctx.fillStyle = '#26384f';
+        ctx.fillRect(px * this.charW, py * this.charH, this.charW * Math.max(1, w), this.charH);
+        this.drawGlyph(ch, px, py, palette.defaultFg, false);
+        ctx.strokeStyle = '#79c0ff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(px * this.charW, (py + 1) * this.charH - 2);
+        ctx.lineTo((px + Math.max(1, w)) * this.charW, (py + 1) * this.charH - 2);
+        ctx.stroke();
+        px += Math.max(1, w);
+      }
+    }
+
+    if (this.selection) {
+      const first = Math.min(this.selection.start, this.selection.end);
+      const last = Math.max(this.selection.start, this.selection.end);
+      for (const idx of [first, last]) {
+        const hx = idx % this.cols;
+        const hy = Math.floor(idx / this.cols);
+        if (hy >= 0 && hy < this.rows) {
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeStyle = '#0b5cad';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc((hx + 0.5) * this.charW, (hy + 0.5) * this.charH, Math.max(5, Math.min(this.charW, this.charH) * 0.32), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+    }
+
+    if (!this.viewOffset && document.activeElement === this.textarea) {
+      ctx.fillStyle = 'rgba(255,255,255,.55)';
+      ctx.fillRect(this.x * this.charW, this.y * this.charH, this.charW, this.charH);
+    }
+  }
+}
+
+class XtermCompat {
+  constructor(host, opts={}) {
+    this.host = host;
+    this.element = host;
+    this.options = { fontSize: opts.fontSize || DEFAULT_FONT_SIZE };
+    this.term = new Terminal({
+      termName:'xterm-256color', fontFamily:'"Noto Sans Mono CJK JP","Droid Sans Mono","Roboto Mono",monospace', fontSize:this.options.fontSize,
+      lineHeight:1.2, cursorBlink:false, cursorStyle:'block', customGlyphs:false, windowsMode:true, scrollback:XTERM_SCROLLBACK, convertEol:false,
+      theme:{ background:palette.defaultBg, foreground:palette.defaultFg, cursor:palette.cursor, selectionBackground:palette.selection,
+        black:palette.normal[0], red:palette.normal[1], green:palette.normal[2], yellow:palette.normal[3], blue:palette.normal[4], magenta:palette.normal[5], cyan:palette.normal[6], white:palette.normal[7],
+        brightBlack:palette.bright[0], brightRed:palette.bright[1], brightGreen:palette.bright[2], brightYellow:palette.bright[3], brightBlue:palette.bright[4], brightMagenta:palette.bright[5], brightCyan:palette.bright[6], brightWhite:palette.bright[7] }
+    });
+    this.fitAddon = new FitAddon.FitAddon();
+    this.term.loadAddon(this.fitAddon);
+    this.term.open(host);
+    this.textarea = this.term.textarea;
+    this.canvas = host.querySelector('.xterm-screen canvas') || host;
+    this.dataHandlers = [];
+    this.term.onData(data => this.emitData(data));
+    this.fit();
+  }
+  get rows() { return this.term.rows; }
+  get cols() { return this.term.cols; }
+  set rows(_) {}
+  set cols(_) {}
+  onData(cb) { this.dataHandlers.push(cb); }
+  emitData(data) { for (const cb of this.dataHandlers) cb(data); }
+  fit() { this.term.options.fontSize = this.options.fontSize; this.fitAddon.fit(); if (this.term.rows > 4) this.term.resize(this.term.cols, this.term.rows - 1); this.refresh(); }
+  focus() { this.term.focus(); }
+  write(text, cb) { this.term.write(text, cb); }
+  clear() { this.term.clear(); }
+  refresh() { try { this.term.clearTextureAtlas(); this.term.refresh(0, this.term.rows - 1); } catch (_) {} }
+  clearTextureAtlas() { try { this.term.clearTextureAtlas(); } catch (_) {} }
+  select(x, y, len) { this.term.select(x, y, len); }
+  clearSelection() { this.term.clearSelection(); }
+  setCompositionPreview(_) {}
+  setSelectionRange(start, end) { const first = Math.min(start, end); this.term.select(first % this.cols, Math.floor(first / this.cols), Math.max(1, Math.abs(end - start) + 1)); }
+  getSelection() { return this.term.getSelection(); }
+}
+
+function makePane(index) {
+  const term = rendererMode === 'safe' ? new XtermCompat(document.getElementById('term' + index), { fontSize }) : new VirtualTerm(document.getElementById('term' + index), { fontSize });
+  term.onData(data => sendKey(data));
+  installDirectImeFlush(term, index);
+  if (term.setPersistKey) term.setPersistKey('session-' + index);
+  return { term, session: index, decoder: new TextDecoder('utf-8') };
+}
+const panes = [makePane(0), makePane(1)];
+for (const p of panes) { p.pending = ''; p.writeScheduled = false; }
+function queueWrite(p, text) {
+  p.pending += text;
+  if (p.writeScheduled) return;
+  p.writeScheduled = true;
+  requestAnimationFrame(() => {
+    p.writeScheduled = false;
+    const chunk = p.pending;
+    p.pending = '';
+    if (chunk) p.term.write(chunk);
+  });
+}
+function active() { return panes[activePane]; }
+function refocusActiveSoon() { setTimeout(() => { try { active().term.focus(); } catch (_) {} }, REFOCUS_DELAY_MS); }
+function clearActiveSelection() { try { active().term.clearSelection(); } catch (_) {} }
+function sendText(text) { if (!text || selecting || Date.now() < selectionInputBlockUntil) return; clearActiveSelection(); Android.writeBase64(active().session, toB64(enc.encode(text))); }
+function sendResize(index) { const p = panes[index]; Android.resize(p.session, p.term.rows, p.term.cols); }
+function fitAll(reason='layout') {
+  const notifyPty = reason !== 'keyboard';
+  panes.forEach((p, i) => {
+    p.term.options.fontSize = fontSize;
+    p.term.fit();
+    p.term.refresh();
+    if (notifyPty) sendResize(i);
+  });
+}
+function setFontSize(value) { fontSize = clampFontSize(value); fitAll('font'); saveLayout(); }
+function isTerminalInputFocused() {
+  return panes.some(p => document.activeElement === p.term.textarea);
+}
+let resizeTimer = null;
+function viewportHeight() {
+  return Math.round((window.visualViewport && window.visualViewport.height) || window.innerHeight || 0);
+}
+let lastViewportHeight = viewportHeight();
+function scheduleWindowFit() {
+  const nextHeight = viewportHeight();
+  const delta = Math.abs(nextHeight - lastViewportHeight);
+  lastViewportHeight = nextHeight;
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    resizeTimer = null;
+    const wasFocused = isTerminalInputFocused();
+    fitAll('window');
+    setTimeout(() => { panes.forEach(p => p.term.refresh()); if (wasFocused) refocusActiveSoon(); }, REFRESH_AFTER_FIT_MS);
+  }, delta > RESIZE_KEYBOARD_DELTA ? RESIZE_FAST_DELAY_MS : RESIZE_SLOW_DELAY_MS);
+}
+function setActivePane(index) {
+  if (index !== activePane) exitSelectionMode(false);
+  activePane = index;
+  document.getElementById('pane0').classList.toggle('active', index === 0);
+  document.getElementById('pane1').classList.toggle('active', index === 1);
+  try { panes[index].term.clearSelection(); } catch (_) {}
+  panes[index].term.focus();
+  refreshSessions();
+  saveLayout();
+}
+function terminalWriteBase64(session, b64) {
+  const p = panes.find(x => x.session === session);
+  if (p) queueWrite(p, p.decoder.decode(fromB64(b64), { stream: true }));
+}
+window.terminalWriteBase64 = terminalWriteBase64;
+function resetPaneForSession(paneIndex, session) {
+  const p = panes[paneIndex];
+  p.pending = '';
+  p.writeScheduled = false;
+  p.session = session;
+  p.decoder = new TextDecoder('utf-8');
+  if (p.term.setPersistKey) p.term.setPersistKey('session-' + session);
+  else { p.term.clear(); p.term.refresh(); }
+  document.querySelector('#pane' + paneIndex + ' .paneTitle').textContent = 'S' + (session + 1);
+}
+function switchPaneSession(paneIndex, session, connect=true) {
+  const target = Math.max(0, Math.min(3, Number(session) || 0));
+  resetPaneForSession(paneIndex, target);
+  if (connect) Android.connectSession(target);
+  refreshSessions();
+  saveLayout();
+  fitAll('session');
+  panes[paneIndex].term.focus();
+}
+window.flushScrollback = function() {
+  try { for (const p of panes) if (p.term.persistNow) p.term.persistNow(); } catch (_) {}
+};
+window.addEventListener('pagehide', window.flushScrollback);
+document.addEventListener('visibilitychange', () => { if (document.hidden) window.flushScrollback(); });
+
+function installDirectImeFlush(term, paneIndex) {
+  const helper = term.textarea;
+  if (!helper || helper.dataset.imeConsoleFlush === '1') return;
+  helper.dataset.imeConsoleFlush = '1';
+  helper.setAttribute('autocomplete', 'off'); helper.setAttribute('autocorrect', 'off'); helper.setAttribute('autocapitalize', 'none'); helper.setAttribute('spellcheck', 'false');
+  let helperComposing = false, lastImmediate = '', lastImmediateAt = 0;
+  const isImmediateAscii = text => !!text && /^[\x20-\x7e]+$/.test(text);
+  const setPreview = text => { if (term.setCompositionPreview) term.setCompositionPreview(text || ''); };
+  const writePaneText = text => {
+    if (!text || selecting || Date.now() < selectionInputBlockUntil) return false;
+    setPreview('');
+    setActivePane(paneIndex);
+    try { term.clearSelection(); } catch (_) {}
+    if (mods.ctrl || mods.alt || mods.esc) sendKey(text); else Android.writeBase64(panes[paneIndex].session, toB64(enc.encode(text)));
+    imeSuppressText = text; imeSuppressUntil = Date.now() + IME_SUPPRESS_MS;
+    return true;
+  };
+  const rememberImmediate = text => { lastImmediate = text; lastImmediateAt = Date.now(); helper.value = ''; setPreview(''); };
+  const wasJustSent = text => text && text === lastImmediate && Date.now() - lastImmediateAt < IMMEDIATE_DEDUPE_MS;
+  const consumeImmediate = text => { if (!isImmediateAscii(text)) return false; if (wasJustSent(text)) { helper.value = ''; return true; } if (!writePaneText(text)) return false; rememberImmediate(text); return true; };
+  const flushHelper = () => { if (selecting || Date.now() < selectionInputBlockUntil || !helper.value) return false; const text = helper.value; if (wasJustSent(text)) { helper.value = ''; setPreview(''); return true; } if (helperComposing && !isImmediateAscii(text)) { setPreview(text); return false; } helper.value = ''; return writePaneText(text); };
+  helper.addEventListener('blur', () => { if (activePane === paneIndex && !selecting) setTimeout(() => { try { helper.focus({ preventScroll:true }); } catch (_) { helper.focus(); } }, IME_BLUR_REFOCUS_MS); }, true);
+  helper.addEventListener('compositionstart', () => { helperComposing = true; setPreview(helper.value || ''); }, true);
+  helper.addEventListener('compositionupdate', ev => { const text = helper.value || ev.data || ''; if (consumeImmediate(text)) { ev.preventDefault(); ev.stopImmediatePropagation(); helperComposing = false; } else setPreview(text); }, true);
+  helper.addEventListener('compositionend', ev => { const text = helper.value || ev.data || ''; helperComposing = false; setPreview(''); if (wasJustSent(text)) { helper.value = ''; return; } setTimeout(flushHelper, 0); }, true);
+  helper.addEventListener('beforeinput', ev => {
+    if (selecting || Date.now() < selectionInputBlockUntil) return;
+    if ((ev.inputType === 'insertText' || ev.inputType === 'insertCompositionText') && ev.data && isImmediateAscii(ev.data)) { ev.preventDefault(); ev.stopImmediatePropagation(); consumeImmediate(ev.data); return; }
+    if (ev.isComposing || helperComposing) { setPreview(helper.value || ev.data || ''); return; }
+    if (ev.inputType === 'insertText' && ev.data) { ev.preventDefault(); ev.stopImmediatePropagation(); helper.value = ''; writePaneText(ev.data); }
+  }, true);
+  helper.addEventListener('input', ev => { if (helperComposing) setPreview(helper.value || ''); if (flushHelper()) ev.stopImmediatePropagation(); }, true);
+  helper.addEventListener('keyup', ev => { if (flushHelper()) ev.stopImmediatePropagation(); }, true);
+  helper.addEventListener('keydown', ev => { if (selecting || Date.now() < selectionInputBlockUntil || ev.ctrlKey || ev.metaKey || ev.altKey) return; if (ev.key && ev.key.length === 1 && isImmediateAscii(ev.key)) setTimeout(flushHelper, 0); }, true);
+  setInterval(() => { if (document.activeElement === helper) flushHelper(); }, IME_POLL_MS);
+}
+
+let pinchState = null;
+function touchDistance(a, b) { return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); }
+document.getElementById('terms').addEventListener('touchstart', ev => { if (ev.touches.length === 2) { pinchState = { distance: touchDistance(ev.touches[0], ev.touches[1]), fontSize }; ev.preventDefault(); } }, { passive:false });
+document.getElementById('terms').addEventListener('touchmove', ev => { if (pinchState && ev.touches.length === 2) { setFontSize(pinchState.fontSize * touchDistance(ev.touches[0], ev.touches[1]) / Math.max(1, pinchState.distance)); ev.preventDefault(); } }, { passive:false });
+document.getElementById('terms').addEventListener('touchend', ev => { if (ev.touches.length < 2) pinchState = null; }, { passive:true });
+window.addEventListener('resize', scheduleWindowFit);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleWindowFit);
+
+let longPressTimer = null, selectionStartPoint = null, pointerSelection = null, selectionMode = null;
+function selectedText() { return active().term.getSelection(); }
+function exitSelectionMode(refocus=true) {
+  if (longPressTimer) clearTimeout(longPressTimer);
+  longPressTimer = null;
+  selectionStartPoint = null;
+  pointerSelection = null;
+  selectionMode = null;
+  selecting = false;
+  selectionInputBlockUntil = 0;
+  try { active().term.clearSelection(); } catch (_) {}
+  if (refocus) try { active().term.focus(); } catch (_) {}
+}
+function copySelection() { const text = selectedText(); if (text) Android.copyText(text); exitSelectionMode(true); }
+function clearSelection() { exitSelectionMode(true); }
+function cellFromPoint(term, point) {
+  term.canvas = term.canvas || term.element.querySelector('.xterm-screen canvas') || term.element;
+  const rect = term.canvas.getBoundingClientRect();
+  const x = Math.max(0, Math.min(term.cols - 1, Math.floor((point.clientX - rect.left) * term.cols / Math.max(1, rect.width))));
+  const y = Math.max(0, Math.min(term.rows - 1, Math.floor((point.clientY - rect.top) * term.rows / Math.max(1, rect.height))));
+  return { x, y };
+}
+function cellIndex(term, cell) { return cell.y * term.cols + cell.x; }
+function pointMovedFar(a, b) { if (!a || !b) return false; return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) > POINTER_MOVE_CANCEL_PX; }
+function applySelectionMode() {
+  if (!selectionMode) return;
+  const term = panes[selectionMode.pane].term;
+  const start = cellIndex(term, selectionMode.start);
+  const end = cellIndex(term, selectionMode.end);
+  if (term.setSelectionRange) term.setSelectionRange(start, end);
+  else term.select(Math.min(start, end) % term.cols, Math.floor(Math.min(start, end) / term.cols), Math.max(1, Math.abs(end - start) + 1));
+}
+function beginSelectionDrag(paneIndex, pointerId, cell, host, keepAnchor) {
+  selecting = true;
+  selectionInputBlockUntil = 0;
+  pointerSelection = { pane:paneIndex, pointerId };
+  if (!selectionMode || selectionMode.pane !== paneIndex || !keepAnchor) selectionMode = { pane:paneIndex, start:cell, end:cell, dragging:true };
+  else { selectionMode.dragging = true; selectionMode.end = cell; }
+  try { host.setPointerCapture(pointerId); } catch (_) {}
+  applySelectionMode();
+}
+function finishSelectionDrag(paneIndex, ev) {
+  if (pointerSelection && ev.pointerId !== pointerSelection.pointerId) return;
+  if (longPressTimer) clearTimeout(longPressTimer);
+  longPressTimer = null;
+  if (selectionMode) selectionMode.dragging = false;
+  pointerSelection = null;
+  selectionStartPoint = null;
+  selectionInputBlockUntil = Date.now() + SELECTION_RELEASE_BLOCK_MS;
+  try { document.getElementById('term' + paneIndex).releasePointerCapture(ev.pointerId); } catch (_) {}
+}
+for (let i=0; i<panes.length; i++) {
+  const host = document.getElementById('term' + i);
+  host.addEventListener('pointerdown', ev => {
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+    ev.preventDefault();
+    setActivePane(i);
+    selectionStartPoint = { clientX:ev.clientX, clientY:ev.clientY };
+    const startCell = cellFromPoint(panes[i].term, ev);
+    if (selectionMode && selectionMode.pane === i) {
+      beginSelectionDrag(i, ev.pointerId, startCell, host, true);
+      return;
+    }
+    if (longPressTimer) clearTimeout(longPressTimer);
+    pointerSelection = { pane:i, pointerId:ev.pointerId };
+    longPressTimer = setTimeout(() => {
+      beginSelectionDrag(i, ev.pointerId, startCell, host, false);
+    }, LONG_PRESS_MS);
+    refocusActiveSoon();
+  }, { passive:false });
+  host.addEventListener('pointermove', ev => {
+    if (selectionMode && selectionMode.dragging && pointerSelection && pointerSelection.pane === i && ev.pointerId === pointerSelection.pointerId) {
+      ev.preventDefault();
+      selectionMode.end = cellFromPoint(panes[i].term, ev);
+      applySelectionMode();
+      return;
+    }
+    if (longPressTimer && pointerSelection && ev.pointerId === pointerSelection.pointerId && pointMovedFar(ev, selectionStartPoint)) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+      pointerSelection = null;
+    }
+  }, { passive:false });
+  host.addEventListener('pointerup', ev => finishSelectionDrag(i, ev), { passive:true });
+  host.addEventListener('pointercancel', ev => finishSelectionDrag(i, ev), { passive:true });
+  host.addEventListener('wheel', ev => { const t=panes[i].term; if (t.scrollView) { ev.preventDefault(); t.scrollView(ev.deltaY < 0 ? 3 : -3); } }, { passive:false });
+}
+let scrollTouch = null;
+document.getElementById('terms').addEventListener('touchstart', ev => { if (ev.touches.length === 1 && !selectionMode && !longPressTimer) scrollTouch = { y: ev.touches[0].clientY, pane: activePane }; }, { passive:true });
+document.getElementById('terms').addEventListener('touchmove', ev => { if (!scrollTouch || selectionMode || longPressTimer || ev.touches.length !== 1) return; const dy = ev.touches[0].clientY - scrollTouch.y; if (Math.abs(dy) > SCROLL_TOUCH_THRESHOLD_PX) { const t=panes[scrollTouch.pane].term; if (t.scrollView) { ev.preventDefault(); t.scrollView(dy > 0 ? 2 : -2); scrollTouch.y = ev.touches[0].clientY; } } }, { passive:false });
+document.getElementById('terms').addEventListener('touchend', () => { scrollTouch = null; }, { passive:true });
+document.getElementById('copySel').onclick = copySelection;
+document.getElementById('clearSel').onclick = clearSelection;
+
+const mods = { ctrl:false, alt:false, esc:false };
+function setMod(name) { mods[name] = !mods[name]; refreshModButtons(); active().term.focus(); }
+function refreshModButtons() { document.querySelectorAll('[data-mod]').forEach(b => b.classList.toggle('active', !!mods[b.dataset.mod])); }
+function ctrlCode(text) { if (!text || text.length !== 1) return text; const c = text.toUpperCase().charCodeAt(0); if (c >= 64 && c <= 95) return String.fromCharCode(c - 64); if (text === ' ') return '\x00'; return text; }
+function sendKey(data) { if (data && data === imeSuppressText && Date.now() < imeSuppressUntil) return; let out = data; if (mods.ctrl) out = ctrlCode(out); if (mods.alt) out = '\x1b' + out; if (mods.esc) out = '\x1b' + out; mods.ctrl = false; mods.alt = false; mods.esc = false; refreshModButtons(); sendText(out); active().term.focus(); }
+const keyDefs = [
+  { label:'Ctrl', mod:'ctrl' }, { label:'Alt', mod:'alt' }, { label:'Esc', mod:'esc' }, { label:'Tab', data:'\t' }, { label:'Enter', data:'\r' }, { label:'Bksp', data:'\x7f' },
+  { label:'Ins', data:'\x1b[2~' }, { label:'Del', data:'\x1b[3~' }, { label:'Home', data:'\x1b[H' }, { label:'End', data:'\x1b[F' }, { label:'PgUp', data:'\x1b[5~' }, { label:'PgDn', data:'\x1b[6~' }, { gap:true }, { gap:true },
+  { spacer:true }, { label:'←', data:'\x1b[D' }, { label:'↑', data:'\x1b[A' }, { label:'↓', data:'\x1b[B' }, { spacer:true }, { label:'→', data:'\x1b[C' }, { gap:true }, { gap:true },
+  { label:'/', data:'/' }, { label:'\\', data:'\\' }, { label:'-', data:'-' }, { label:'_', data:'_' }, { label:'|', data:'|' }, { label:'~', data:'~' }, { label:'.', data:'.' }, { label:',', data:',' }, { label:':', data:':' }, { label:';', data:';' }, { label:'=', data:'=' }, { label:'+', data:'+' },
+  { label:'$', data:'$' }, { label:'#', data:'#' }, { label:'&', data:'&' }, { label:'*', data:'*' }, { label:'@', data:'@' }, { label:'%', data:'%' }, { label:'(', data:'(' }, { label:')', data:')' }, { label:'[', data:'[' }, { label:']', data:']' }, { label:'{', data:'{' }, { label:'}', data:'}' },
+  { label:'<', data:'<' }, { label:'>', data:'>' }, { label:'"', data:'"' }, { label:"'", data:"'" }, { label:'`', data:'`' }, { gap:true },
+  { label:'F1', data:'\x1bOP' }, { label:'F2', data:'\x1bOQ' }, { label:'F3', data:'\x1bOR' }, { label:'F4', data:'\x1bOS' }, { label:'F5', data:'\x1b[15~' }, { label:'F6', data:'\x1b[17~' }, { label:'F7', data:'\x1b[18~' }, { label:'F8', data:'\x1b[19~' }, { label:'F9', data:'\x1b[20~' }, { label:'F10', data:'\x1b[21~' }, { label:'F11', data:'\x1b[23~' }, { label:'F12', data:'\x1b[24~' }
+];
+const keys = document.getElementById('keys');
+for (const key of keyDefs) {
+  if (key.spacer || key.gap) { const spacer = document.createElement('div'); spacer.className = key.gap ? 'keyGap' : 'keySpacer'; keys.appendChild(spacer); continue; }
+  const b = document.createElement('button'); b.textContent = key.label;
+  if (key.mod) { b.dataset.mod = key.mod; b.onclick = () => setMod(key.mod); } else b.onclick = () => sendKey(key.data);
+  keys.appendChild(b);
+}
+const sessions = document.getElementById('sessions');
+function refreshSessions() { for (const [i,b] of [...sessions.children].entries()) b.classList.toggle('active', i === active().session); }
+for (let i=0; i<4; i++) { const b=document.createElement('button'); b.textContent='S'+(i+1); b.onclick=()=>switchPaneSession(activePane, i, true); sessions.appendChild(b); }
+refreshSessions();
+function refreshModeButton() { const b = document.getElementById('mode'); b.textContent = rendererMode === 'safe' ? 'Safe' : 'Buffer'; b.classList.toggle('active', rendererMode === 'safe'); }
+document.getElementById('mode').onclick = () => { rendererMode = rendererMode === 'safe' ? 'buffer' : 'safe'; saveLayout(); location.reload(); };
+refreshModeButton();
+document.getElementById('split').onclick = () => { split = !split; document.body.classList.toggle('single', !split); document.getElementById('split').classList.toggle('active', split); saveLayout(); setTimeout(() => fitAll('split'), REFRESH_AFTER_FIT_MS); };
+document.getElementById('redraw').onclick = () => sendText('\x0c');
+document.getElementById('connect').onclick = () => Android.connectSession(active().session);
+document.getElementById('setup').onclick = () => {
+  try { Android.copyTermuxSetup(); } catch (_) {}
+  try { Android.openTermux(); } catch (_) {}
+};
+document.getElementById('skydnir').onclick = () => { try { Android.connectSkydnir(active().session); } catch (_) {} };
+setTimeout(() => {
+  const saved = loadLayout();
+  if (typeof saved.split === 'boolean') split = saved.split;
+  if (saved.rendererMode === 'safe' || saved.rendererMode === 'buffer') rendererMode = saved.rendererMode;
+  refreshModeButton();
+  if (typeof saved.fontSize === 'number') fontSize = clampFontSize(saved.fontSize);
+  document.body.classList.toggle('single', !split);
+  document.getElementById('split').classList.toggle('active', split);
+  if (Array.isArray(saved.sessions)) for (let i=0; i<Math.min(saved.sessions.length, panes.length); i++) switchPaneSession(i, saved.sessions[i], false);
+  const pane = Math.max(0, Math.min(1, Number(saved.activePane) || 0));
+  fitAll('init');
+  for (const p of panes) Android.connectSession(p.session);
+  setActivePane(pane);
+}, 350);
+</script>
+</body>
+</html>
