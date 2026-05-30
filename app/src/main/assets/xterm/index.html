@@ -29,7 +29,7 @@
   #terms, .term { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 </style>
 </head>
-<body>
+<body class="single">
   <div id="top"><div id="status">starting</div><button id="mode">Buffer</button><button id="split">Split</button><button id="copySel">Copy</button><button id="clearSel">Clear</button><button id="redraw">Redraw</button><button id="setup">Setup</button><button id="skydnir">Skydnir</button><button id="connect">Connect</button></div>
   <div id="sessions"></div>
   <div id="terms">
@@ -66,7 +66,7 @@ const POINTER_MOVE_CANCEL_PX = 14;
 const XTERM_SCROLLBACK = 5000;
 let fontSize = DEFAULT_FONT_SIZE;
 let activePane = 0;
-let split = true;
+let split = false;
 let selecting = false;
 let selectionInputBlockUntil = 0;
 let imeSuppressText = '';
@@ -108,7 +108,7 @@ class VirtualTerm {
     this.host.textContent = '';
     this.host.appendChild(this.canvas);
     this.host.appendChild(this.textarea);
-    this.rows = DEFAULT_ROWS; this.cols = DEFAULT_COLS; this.x = 0; this.y = 0; this.wrapPending = false;
+    this.rows = DEFAULT_ROWS; this.cols = DEFAULT_COLS; this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.scrollTop = 0; this.scrollBottom = this.rows - 1;
     this.saved = { x:0, y:0 };
     this.attr = cloneAttr(VirtualTerm.defaultAttr);
     this.lines = [];
@@ -151,6 +151,8 @@ class VirtualTerm {
     this.x = 0;
     this.y = 0;
     this.wrapPending = false;
+    this.autoWrap = true;
+    this.scrollTop = 0; this.scrollBottom = this.rows - 1;
     this.attr = cloneAttr(VirtualTerm.defaultAttr);
     this.initLines();
     this.restorePersisted();
@@ -201,7 +203,7 @@ class VirtualTerm {
     } catch (_) {}
   }
   cloneLines(lines=this.lines) { return lines.map(line => line.map(cell => ({ ch:cell.ch, cont:cell.cont, attr:cloneAttr(cell.attr) }))); }
-  saveScreen() { return { lines:this.cloneLines(), x:this.x, y:this.y, attr:cloneAttr(this.attr), saved:{x:this.saved.x, y:this.saved.y} }; }
+  saveScreen() { return { lines:this.cloneLines(), x:this.x, y:this.y, scrollTop:this.scrollTop, scrollBottom:this.scrollBottom, attr:cloneAttr(this.attr), saved:{x:this.saved.x, y:this.saved.y} }; }
   restoreScreen(screen) {
     if (!screen) return false;
     this.lines = this.cloneLines(screen.lines);
@@ -211,6 +213,8 @@ class VirtualTerm {
     this.x = Math.max(0, Math.min(this.cols - 1, screen.x || 0));
     this.y = Math.max(0, Math.min(this.rows - 1, screen.y || 0));
     this.wrapPending = false;
+    this.scrollTop = Math.max(0, Math.min(this.rows - 1, screen.scrollTop ?? 0));
+    this.scrollBottom = Math.max(this.scrollTop, Math.min(this.rows - 1, screen.scrollBottom ?? (this.rows - 1)));
     this.attr = cloneAttr(screen.attr || VirtualTerm.defaultAttr);
     this.saved = screen.saved || {x:0, y:0};
     return true;
@@ -256,9 +260,19 @@ class VirtualTerm {
     }
     if (rows > this.rows) while (this.lines.length < rows) this.lines.push(this.blankLine());
     if (rows < this.rows) {
-      while (this.lines.length > rows) this.lines.pop();
+      const removedCount = this.rows - rows;
+      for (let i=0; i<removedCount; i++) {
+        const removed = this.lines.shift();
+        if (removed && !this.isAltScreen) {
+          this.scrollback.push(removed);
+          if (this.scrollback.length > SCROLLBACK_LIMIT) this.scrollback.shift();
+        }
+      }
+      this.y = Math.max(0, this.y - removedCount);
     }
     this.cols = cols; this.rows = rows;
+    this.scrollTop = Math.max(0, Math.min(this.scrollTop || 0, this.rows - 1));
+    this.scrollBottom = Math.max(this.scrollTop, Math.min(this.scrollBottom ?? (this.rows - 1), this.rows - 1));
     this.x = Math.min(this.x, this.cols - 1); this.y = Math.min(this.y, this.rows - 1);
     const dpr = window.devicePixelRatio || 1;
     this.pixelW = this.fitPixelW || this.cols * this.charW;
@@ -276,7 +290,7 @@ class VirtualTerm {
   setCompositionPreview(text) { this.compositionPreview = text || ''; this.requestRender(); }
   clearTextureAtlas() {}
   refresh() { this.requestRender(); }
-  clear() { this.x = 0; this.y = 0; this.wrapPending = false; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.scrollback = []; this.viewOffset = 0; this.initLines(); this.clearSelection(); this.schedulePersist(); this.requestRender(); }
+  clear() { this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.scrollback = []; this.viewOffset = 0; this.initLines(); this.clearSelection(); this.schedulePersist(); this.requestRender(); }
   select(x, y, len) { this.selection = { start:y * this.cols + x, end:y * this.cols + x + Math.max(1, len) - 1 }; this.requestRender(); }
   setSelectionRange(start, end) { this.selection = { start, end }; this.requestRender(); }
   clearSelection() { this.selection = null; this.requestRender(); }
@@ -344,22 +358,46 @@ class VirtualTerm {
     const w = charWidth(ch);
     if (w <= 0) return;
     if (this.wrapPending) { this.x = 0; this.lineFeed(); this.wrapPending = false; }
-    if (w === 2 && this.x === this.cols - 1) { this.x = 0; this.lineFeed(); }
+    if (w === 2 && this.x === this.cols - 1 && this.autoWrap) { this.x = 0; this.lineFeed(); }
     this.clearWideAt(this.x, this.y);
     this.lines[this.y][this.x] = { ch, attr: cloneAttr(this.attr) };
     if (w === 2 && this.x + 1 < this.cols) this.lines[this.y][this.x + 1] = { ch:' ', attr: cloneAttr(this.attr), cont:true };
     this.x += w;
-    if (this.x >= this.cols) { this.x = this.cols - 1; this.wrapPending = true; }
+    if (this.x >= this.cols) { this.x = this.cols - 1; this.wrapPending = !!this.autoWrap; }
   }
-  lineFeed() { if (this.y >= this.rows - 1) this.scrollUp(1); else this.y++; this.viewOffset = 0; this.schedulePersist(); }
-  scrollUp(n=1) { for (let i=0;i<n;i++) { const removed = this.lines.shift(); if (!this.isAltScreen) { this.scrollback.push(removed); if (this.scrollback.length > SCROLLBACK_LIMIT) this.scrollback.shift(); } this.lines.push(this.blankLine()); } this.schedulePersist(); }
-  scrollDown(n=1) { for (let i=0;i<n;i++) { this.lines.pop(); this.lines.unshift(this.blankLine()); } }
+  lineFeed() {
+    if (this.y === this.scrollBottom) this.scrollUp(1, this.scrollTop, this.scrollBottom);
+    else if (this.y < this.rows - 1) this.y++;
+    this.viewOffset = 0;
+    this.schedulePersist();
+  }
+  scrollUp(n=1, top=0, bottom=this.rows - 1) {
+    top = Math.max(0, Math.min(this.rows - 1, top));
+    bottom = Math.max(top, Math.min(this.rows - 1, bottom));
+    for (let i=0;i<n;i++) {
+      const removed = this.lines.splice(top, 1)[0];
+      if (top === 0 && bottom === this.rows - 1 && !this.isAltScreen) {
+        this.scrollback.push(removed);
+        if (this.scrollback.length > SCROLLBACK_LIMIT) this.scrollback.shift();
+      }
+      this.lines.splice(bottom, 0, this.blankLine());
+    }
+    this.schedulePersist();
+  }
+  scrollDown(n=1, top=0, bottom=this.rows - 1) {
+    top = Math.max(0, Math.min(this.rows - 1, top));
+    bottom = Math.max(top, Math.min(this.rows - 1, bottom));
+    for (let i=0;i<n;i++) {
+      this.lines.splice(bottom, 1);
+      this.lines.splice(top, 0, this.blankLine());
+    }
+  }
   handleEsc(ch) {
     if (ch === 'c') this.clear();
     else if (ch === '7') this.saved = { x:this.x, y:this.y };
     else if (ch === '8') { this.x = this.saved.x; this.y = this.saved.y; }
     else if (ch === 'D') this.lineFeed();
-    else if (ch === 'M') { if (this.y === 0) this.scrollDown(1); else this.y--; }
+    else if (ch === 'M') { if (this.y === this.scrollTop) this.scrollDown(1, this.scrollTop, this.scrollBottom); else if (this.y > 0) this.y--; }
     else if (ch === 'E') { this.x = 0; this.lineFeed(); }
   }
   parseParams(raw) {
@@ -371,6 +409,7 @@ class VirtualTerm {
     if ((final === 'h' || final === 'l') && /^\?/.test(raw)) {
       const enabled = final === 'h';
       const modes = raw.slice(1).split(';').map(v => Number(v) || 0);
+      if (modes.includes(7)) this.autoWrap = enabled;
       if (modes.some(v => v === 47 || v === 1047 || v === 1049)) {
         this.setAltScreen(enabled, modes.includes(1049) || modes.includes(1047));
         return;
@@ -379,25 +418,39 @@ class VirtualTerm {
     }
     const p = this.parseParams(raw);
     const n = (i, d=1) => p[i] || d;
-    if ('ABCDGHfH'.includes(final)) this.wrapPending = false;
+    if ('ABCDEGHFfHd`r'.includes(final)) this.wrapPending = false;
     if (final === 'A') this.y = Math.max(0, this.y - n(0));
     else if (final === 'B') this.y = Math.min(this.rows - 1, this.y + n(0));
     else if (final === 'C') this.x = Math.min(this.cols - 1, this.x + n(0));
     else if (final === 'D') this.x = Math.max(0, this.x - n(0));
-    else if (final === 'G') this.x = Math.max(0, Math.min(this.cols - 1, n(0) - 1));
+    else if (final === 'G' || final === '`') this.x = Math.max(0, Math.min(this.cols - 1, n(0) - 1));
+    else if (final === 'E') { this.y = Math.min(this.rows - 1, this.y + n(0)); this.x = 0; }
+    else if (final === 'F') { this.y = Math.max(0, this.y - n(0)); this.x = 0; }
+    else if (final === 'd') this.y = Math.max(0, Math.min(this.rows - 1, n(0) - 1));
     else if (final === 'H' || final === 'f') { this.y = Math.max(0, Math.min(this.rows - 1, n(0) - 1)); this.x = Math.max(0, Math.min(this.cols - 1, n(1) - 1)); }
     else if (final === 'J') this.eraseDisplay(p[0] || 0);
     else if (final === 'K') this.eraseLine(p[0] || 0);
     else if (final === 'm') this.sgr(p.length ? p : [0]);
     else if (final === 's') this.saved = { x:this.x, y:this.y };
     else if (final === 'u') { this.x = this.saved.x; this.y = this.saved.y; }
+    else if (final === 'r') this.setScrollRegion(n(0, 1) - 1, n(1, this.rows) - 1);
     else if (final === 'L') this.insertLines(n(0));
     else if (final === 'M') this.deleteLines(n(0));
     else if (final === 'P') this.deleteChars(n(0));
     else if (final === '@') this.insertChars(n(0));
     else if (final === 'X') this.eraseChars(n(0));
-    else if (final === 'S') this.scrollUp(n(0));
-    else if (final === 'T') this.scrollDown(n(0));
+    else if (final === 'S') this.scrollUp(n(0), this.scrollTop, this.scrollBottom);
+    else if (final === 'T') this.scrollDown(n(0), this.scrollTop, this.scrollBottom);
+  }
+  setScrollRegion(top, bottom) {
+    top = Math.max(0, Math.min(this.rows - 1, Number.isFinite(top) ? top : 0));
+    bottom = Math.max(top, Math.min(this.rows - 1, Number.isFinite(bottom) ? bottom : this.rows - 1));
+    if (bottom <= top) { top = 0; bottom = this.rows - 1; }
+    this.scrollTop = top;
+    this.scrollBottom = bottom;
+    this.x = 0;
+    this.y = 0;
+    this.wrapPending = false;
   }
   eraseDisplay(mode) {
     if (mode === 2 || mode === 3) { this.initLines(); this.viewOffset = 0; this.schedulePersist(); return; }
@@ -410,8 +463,8 @@ class VirtualTerm {
     const end = mode === 1 ? this.x : this.cols - 1;
     for (let x=start; x<=end; x++) this.lines[this.y][x] = blankCell();
   }
-  insertLines(n) { for (let i=0;i<n;i++) { this.lines.splice(this.y, 0, this.blankLine()); this.lines.pop(); } }
-  deleteLines(n) { for (let i=0;i<n;i++) { this.lines.splice(this.y, 1); this.lines.push(this.blankLine()); } }
+  insertLines(n) { if (this.y < this.scrollTop || this.y > this.scrollBottom) return; for (let i=0;i<n;i++) { this.lines.splice(this.y, 0, this.blankLine()); this.lines.splice(this.scrollBottom + 1, 1); } }
+  deleteLines(n) { if (this.y < this.scrollTop || this.y > this.scrollBottom) return; for (let i=0;i<n;i++) { this.lines.splice(this.y, 1); this.lines.splice(this.scrollBottom, 0, this.blankLine()); } }
   insertChars(n) { const line = this.lines[this.y]; for (let i=0;i<n;i++) line.splice(this.x, 0, blankCell()); line.length = this.cols; }
   deleteChars(n) { const line = this.lines[this.y]; for (let i=0;i<n;i++) { line.splice(this.x, 1); line.push(blankCell()); } }
   eraseChars(n) { for (let i=0;i<n && this.x+i<this.cols;i++) this.clearWideAt(this.x+i, this.y); }
