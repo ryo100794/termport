@@ -812,7 +812,13 @@ function queueWrite(p, text) {
 function active() { return panes[activePane]; }
 function refocusActiveSoon() { setTimeout(() => { try { active().term.focus(); } catch (_) {} }, REFOCUS_DELAY_MS); }
 function clearActiveSelection() { try { active().term.clearSelection(); } catch (_) {} }
-function sendText(text) { if (!text || selecting || Date.now() < selectionInputBlockUntil) return; clearActiveSelection(); Android.writeBase64(active().session, toB64(enc.encode(text))); }
+function selectionDragActive() { return !!(selectionMode && selectionMode.dragging); }
+function prepareTerminalInput(refocus=false) {
+  if (selectionDragActive() || Date.now() < selectionInputBlockUntil) return false;
+  if (selecting || selectionMode) exitSelectionMode(refocus);
+  return true;
+}
+function sendText(text) { if (!text || !prepareTerminalInput(false)) return; clearActiveSelection(); Android.writeBase64(active().session, toB64(enc.encode(text))); }
 function sendResize(index) {
   const p = panes[index];
   const rows = Math.max(2, p.term.rows), cols = Math.max(2, p.term.cols);
@@ -908,7 +914,7 @@ function installDirectImeFlush(term, paneIndex) {
   const isImmediateAscii = text => !!text && /^[\x20-\x7e]+$/.test(text);
   const setPreview = text => { if (term.setCompositionPreview) term.setCompositionPreview(text || ''); };
   const writePaneText = text => {
-    if (!text || selecting || Date.now() < selectionInputBlockUntil) return false;
+    if (!text || !prepareTerminalInput(false)) return false;
     setPreview('');
     setActivePane(paneIndex);
     try { term.clearSelection(); } catch (_) {}
@@ -919,20 +925,20 @@ function installDirectImeFlush(term, paneIndex) {
   const rememberImmediate = text => { lastImmediate = text; lastImmediateAt = Date.now(); helper.value = ''; setPreview(''); };
   const wasJustSent = text => text && text === lastImmediate && Date.now() - lastImmediateAt < IMMEDIATE_DEDUPE_MS;
   const consumeImmediate = text => { if (!isImmediateAscii(text)) return false; if (wasJustSent(text)) { helper.value = ''; return true; } if (!writePaneText(text)) return false; rememberImmediate(text); return true; };
-  const flushHelper = () => { if (selecting || Date.now() < selectionInputBlockUntil || !helper.value) return false; const text = helper.value; if (wasJustSent(text)) { helper.value = ''; setPreview(''); return true; } if (helperComposing && !isImmediateAscii(text)) { setPreview(text); return false; } helper.value = ''; return writePaneText(text); };
-  helper.addEventListener('blur', () => { if (activePane === paneIndex && !selecting) setTimeout(() => { try { helper.focus({ preventScroll:true }); } catch (_) { helper.focus(); } }, IME_BLUR_REFOCUS_MS); }, true);
+  const flushHelper = () => { if (selectionDragActive() || Date.now() < selectionInputBlockUntil || !helper.value) return false; const text = helper.value; if (wasJustSent(text)) { helper.value = ''; setPreview(''); return true; } if (helperComposing && !isImmediateAscii(text)) { setPreview(text); return false; } helper.value = ''; return writePaneText(text); };
+  helper.addEventListener('blur', () => { if (activePane === paneIndex && !selectionDragActive()) setTimeout(() => { try { helper.focus({ preventScroll:true }); } catch (_) { helper.focus(); } }, IME_BLUR_REFOCUS_MS); }, true);
   helper.addEventListener('compositionstart', () => { helperComposing = true; setPreview(helper.value || ''); }, true);
   helper.addEventListener('compositionupdate', ev => { const text = helper.value || ev.data || ''; if (consumeImmediate(text)) { ev.preventDefault(); ev.stopImmediatePropagation(); helperComposing = false; } else setPreview(text); }, true);
   helper.addEventListener('compositionend', ev => { const text = helper.value || ev.data || ''; helperComposing = false; setPreview(''); if (wasJustSent(text)) { helper.value = ''; return; } setTimeout(flushHelper, 0); }, true);
   helper.addEventListener('beforeinput', ev => {
-    if (selecting || Date.now() < selectionInputBlockUntil) return;
+    if (selectionDragActive() || Date.now() < selectionInputBlockUntil) return;
     if ((ev.inputType === 'insertText' || ev.inputType === 'insertCompositionText') && ev.data && isImmediateAscii(ev.data)) { ev.preventDefault(); ev.stopImmediatePropagation(); consumeImmediate(ev.data); return; }
     if (ev.isComposing || helperComposing) { setPreview(helper.value || ev.data || ''); return; }
     if (ev.inputType === 'insertText' && ev.data) { ev.preventDefault(); ev.stopImmediatePropagation(); helper.value = ''; writePaneText(ev.data); }
   }, true);
   helper.addEventListener('input', ev => { if (helperComposing) setPreview(helper.value || ''); if (flushHelper()) ev.stopImmediatePropagation(); }, true);
   helper.addEventListener('keyup', ev => { if (flushHelper()) ev.stopImmediatePropagation(); }, true);
-  helper.addEventListener('keydown', ev => { if (selecting || Date.now() < selectionInputBlockUntil || ev.ctrlKey || ev.metaKey || ev.altKey) return; if (ev.key && ev.key.length === 1 && isImmediateAscii(ev.key)) setTimeout(flushHelper, 0); }, true);
+  helper.addEventListener('keydown', ev => { if (selectionDragActive() || Date.now() < selectionInputBlockUntil || ev.ctrlKey || ev.metaKey || ev.altKey) return; if (ev.key && ev.key.length === 1 && isImmediateAscii(ev.key)) setTimeout(flushHelper, 0); }, true);
   setInterval(() => { if (document.activeElement === helper) flushHelper(); }, IME_POLL_MS);
 }
 
