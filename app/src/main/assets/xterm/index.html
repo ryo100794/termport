@@ -809,7 +809,15 @@ function queueWrite(p, text) {
     if (chunk) p.term.write(chunk);
   });
 }
-function active() { return panes[activePane]; }
+function isPaneVisible(index) { return split || index === 0; }
+function normalizePaneIndex(index) { return isPaneVisible(index) ? index : 0; }
+function active() { activePane = normalizePaneIndex(activePane); return panes[activePane]; }
+function relayout(reason='layout') {
+  fitAll(reason);
+  for (const delay of [REFRESH_AFTER_FIT_MS, RESIZE_SLOW_DELAY_MS, 360]) {
+    setTimeout(() => fitAll(reason + '-' + delay), delay);
+  }
+}
 function refocusActiveSoon() { setTimeout(() => { try { active().term.focus(); } catch (_) {} }, REFOCUS_DELAY_MS); }
 function clearActiveSelection() { try { active().term.clearSelection(); } catch (_) {} }
 function selectionDragActive() { return !!(selectionMode && selectionMode.dragging); }
@@ -820,6 +828,7 @@ function prepareTerminalInput(refocus=false) {
 }
 function sendText(text) { if (!text || !prepareTerminalInput(false)) return; clearActiveSelection(); Android.writeBase64(active().session, toB64(enc.encode(text))); }
 function sendResize(index) {
+  if (!isPaneVisible(index)) return;
   const p = panes[index];
   const rows = Math.max(2, p.term.rows), cols = Math.max(2, p.term.cols);
   if (p.lastRows === rows && p.lastCols === cols) return;
@@ -829,6 +838,7 @@ function sendResize(index) {
 function fitAll(reason='layout') {
   applyViewportHeight();
   panes.forEach((p, i) => {
+    if (!isPaneVisible(i)) return;
     p.term.options.fontSize = fontSize;
     p.term.fit();
     p.term.refresh();
@@ -861,11 +871,12 @@ function scheduleWindowFit() {
   resizeTimer = setTimeout(() => {
     resizeTimer = null;
     const wasFocused = isTerminalInputFocused();
-    fitAll('window');
-    setTimeout(() => { panes.forEach(p => p.term.refresh()); if (wasFocused) refocusActiveSoon(); }, REFRESH_AFTER_FIT_MS);
+    relayout(delta > RESIZE_KEYBOARD_DELTA ? 'keyboard' : 'window');
+    setTimeout(() => { if (wasFocused) refocusActiveSoon(); }, REFRESH_AFTER_FIT_MS);
   }, delta > RESIZE_KEYBOARD_DELTA ? RESIZE_FAST_DELAY_MS : RESIZE_SLOW_DELAY_MS);
 }
 function setActivePane(index) {
+  index = normalizePaneIndex(index);
   if (index !== activePane) exitSelectionMode(false);
   activePane = index;
   document.getElementById('pane0').classList.toggle('active', index === 0);
@@ -876,8 +887,10 @@ function setActivePane(index) {
   saveLayout();
 }
 function terminalWriteBase64(session, b64) {
-  const p = panes.find(x => x.session === session);
-  if (p) queueWrite(p, p.decoder.decode(fromB64(b64), { stream: true }));
+  const bytes = fromB64(b64);
+  for (const p of panes) {
+    if (p.session === session) queueWrite(p, p.decoder.decode(bytes, { stream: true }));
+  }
 }
 window.terminalWriteBase64 = terminalWriteBase64;
 function resetPaneForSession(paneIndex, session) {
@@ -891,12 +904,14 @@ function resetPaneForSession(paneIndex, session) {
   document.querySelector('#pane' + paneIndex + ' .paneTitle').textContent = 'S' + (session + 1);
 }
 function switchPaneSession(paneIndex, session, connect=true) {
+  paneIndex = normalizePaneIndex(paneIndex);
   const target = Math.max(0, Math.min(3, Number(session) || 0));
   resetPaneForSession(paneIndex, target);
   if (connect) Android.connectSession(target);
+  setActivePane(paneIndex);
   refreshSessions();
   saveLayout();
-  fitAll('session');
+  relayout('session');
   panes[paneIndex].term.focus();
 }
 window.flushScrollback = function() {
@@ -948,7 +963,12 @@ document.getElementById('terms').addEventListener('touchstart', ev => { if (ev.t
 document.getElementById('terms').addEventListener('touchmove', ev => { if (pinchState && ev.touches.length === 2) { setFontSize(pinchState.fontSize * touchDistance(ev.touches[0], ev.touches[1]) / Math.max(1, pinchState.distance)); ev.preventDefault(); } }, { passive:false });
 document.getElementById('terms').addEventListener('touchend', ev => { if (ev.touches.length < 2) pinchState = null; }, { passive:true });
 window.addEventListener('resize', scheduleWindowFit);
-if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleWindowFit);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', scheduleWindowFit);
+  window.visualViewport.addEventListener('scroll', scheduleWindowFit);
+}
+document.addEventListener('focusin', () => relayout('focusin'));
+document.addEventListener('focusout', () => relayout('focusout'));
 
 let longPressTimer = null, selectionStartPoint = null, pointerSelection = null, pointerScroll = null, selectionMode = null;
 function selectedText() { return active().term.getSelection(); }
@@ -1088,7 +1108,20 @@ refreshSessions();
 function refreshModeButton() { const b = document.getElementById('mode'); b.textContent = rendererMode === 'safe' ? 'Xterm' : 'Buffer'; b.classList.toggle('active', rendererMode === 'buffer'); }
 document.getElementById('mode').onclick = () => { rendererMode = rendererMode === 'safe' ? 'buffer' : 'safe'; saveLayout(); location.reload(); };
 refreshModeButton();
-document.getElementById('split').onclick = () => { split = !split; document.body.classList.toggle('single', !split); document.getElementById('split').classList.toggle('active', split); saveLayout(); setTimeout(() => fitAll('split'), REFRESH_AFTER_FIT_MS); };
+function applySplitState(enabled, persist=true) {
+  split = !!enabled;
+  document.body.classList.toggle('single', !split);
+  document.getElementById('split').classList.toggle('active', split);
+  if (!split) setActivePane(0);
+  else {
+    document.getElementById('pane0').classList.toggle('active', activePane === 0);
+    document.getElementById('pane1').classList.toggle('active', activePane === 1);
+    refreshSessions();
+  }
+  if (persist) saveLayout();
+  relayout('split');
+}
+document.getElementById('split').onclick = () => applySplitState(!split, true);
 document.getElementById('redraw').onclick = () => sendText('\x0c');
 document.getElementById('connect').onclick = () => Android.connectSession(active().session);
 document.getElementById('setup').onclick = () => {
@@ -1102,11 +1135,15 @@ setTimeout(() => {
   if (saved.rendererMode === 'safe' || saved.rendererMode === 'buffer') rendererMode = saved.rendererMode;
   refreshModeButton();
   if (typeof saved.fontSize === 'number') fontSize = clampFontSize(saved.fontSize);
-  document.body.classList.toggle('single', !split);
-  document.getElementById('split').classList.toggle('active', split);
-  if (Array.isArray(saved.sessions)) for (let i=0; i<Math.min(saved.sessions.length, panes.length); i++) switchPaneSession(i, saved.sessions[i], false);
-  const pane = Math.max(0, Math.min(1, Number(saved.activePane) || 0));
-  fitAll('init');
+  applySplitState(split, false);
+  if (Array.isArray(saved.sessions)) {
+    for (let i=0; i<Math.min(saved.sessions.length, panes.length); i++) {
+      const target = Math.max(0, Math.min(3, Number(saved.sessions[i]) || 0));
+      resetPaneForSession(i, target);
+    }
+  }
+  const pane = split ? Math.max(0, Math.min(1, Number(saved.activePane) || 0)) : 0;
+  relayout('init');
   for (const p of panes) Android.connectSession(p.session);
   setActivePane(pane);
 }, 350);
