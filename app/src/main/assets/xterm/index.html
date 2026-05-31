@@ -71,6 +71,8 @@ const POINTER_MOVE_CANCEL_PX = 14;
 const SWIPE_SESSION_THRESHOLD_PX = 72;
 const XTERM_SCROLLBACK = 20000;
 const XTERM_TRANSCRIPT_LIMIT = 1024 * 1024;
+const SESSION_COUNT = 4;
+const HIDDEN_SESSION_BACKLOG_LIMIT = 1024 * 1024;
 let fontSize = DEFAULT_FONT_SIZE;
 let activePane = 0;
 let split = false;
@@ -838,7 +840,22 @@ function makePane(index) {
   return { term, session: index, decoder: new TextDecoder('utf-8') };
 }
 const panes = [makePane(0), makePane(1)];
+const sessionDecoders = Array.from({ length:SESSION_COUNT }, () => new TextDecoder('utf-8'));
+const hiddenSessionBacklog = Array.from({ length:SESSION_COUNT }, () => '');
 for (const p of panes) { p.pending = ''; p.writeScheduled = false; }
+function normalizeSessionId(session) { return Math.max(0, Math.min(SESSION_COUNT - 1, Number(session) || 0)); }
+function appendHiddenSessionBacklog(session, text) {
+  const s = normalizeSessionId(session);
+  if (!text) return;
+  hiddenSessionBacklog[s] = (hiddenSessionBacklog[s] || '') + text;
+  if (hiddenSessionBacklog[s].length > HIDDEN_SESSION_BACKLOG_LIMIT) hiddenSessionBacklog[s] = hiddenSessionBacklog[s].slice(-HIDDEN_SESSION_BACKLOG_LIMIT);
+}
+function drainHiddenSessionBacklog(session) {
+  const s = normalizeSessionId(session);
+  const text = hiddenSessionBacklog[s] || '';
+  hiddenSessionBacklog[s] = '';
+  return text;
+}
 function queueWrite(p, text) {
   p.pending += text;
   if (p.writeScheduled) return;
@@ -967,10 +984,14 @@ function setActivePane(index) {
   saveLayout();
 }
 function terminalWriteBase64(session, b64) {
+  const s = normalizeSessionId(session);
   const bytes = fromB64(b64);
+  const text = sessionDecoders[s].decode(bytes, { stream:true });
+  let delivered = false;
   for (const p of panes) {
-    if (p.session === session) queueWrite(p, p.decoder.decode(bytes, { stream: true }));
+    if (p.session === s) { queueWrite(p, text); delivered = true; }
   }
+  if (!delivered) appendHiddenSessionBacklog(s, text);
 }
 window.terminalWriteBase64 = terminalWriteBase64;
 function resetPaneForSession(paneIndex, session) {
@@ -982,6 +1003,15 @@ function resetPaneForSession(paneIndex, session) {
   p.decoder = new TextDecoder('utf-8');
   if (p.term.setPersistKey) p.term.setPersistKey('session-' + session);
   else { p.term.clear(); p.term.refresh(); }
+  const hiddenBacklog = drainHiddenSessionBacklog(session);
+  if (hiddenBacklog) {
+    setTimeout(() => {
+      if (p.session === session) {
+        queueWrite(p, hiddenBacklog);
+        setTimeout(() => { try { if (p.term.persistNow) p.term.persistNow(); } catch (_) {} }, PERSIST_DELAY_MS);
+      }
+    }, REFRESH_AFTER_FIT_MS);
+  }
   document.querySelector('#pane' + paneIndex + ' .paneTitle').textContent = 'S' + (session + 1);
   restorePaneViewSoon(paneIndex);
 }
@@ -1307,7 +1337,7 @@ function applySplitState(enabled, persist=true) {
   relayout('split');
 }
 document.getElementById('split').onclick = () => applySplitState(!split, true);
-document.getElementById('redraw').onclick = () => sendText('\x0c');
+document.getElementById('redraw').onclick = () => { try { active().term.refresh(); } catch (_) {} relayout('redraw'); };
 document.getElementById('connect').onclick = () => Android.connectSession(active().session);
 document.getElementById('setup').onclick = () => {
   try { Android.copyTermuxSetup(); } catch (_) {}
