@@ -192,6 +192,10 @@ public class MainActivity extends Activity {
 
     private void connectSession(int session) {
         int s = clampSession(session);
+        if (sockets[s] != null && socketOuts[s] != null && sockets[s].isConnected() && !sockets[s].isClosed()) {
+            setStatus("Session " + (s + 1) + ": connected");
+            return;
+        }
         closeSocket(s);
         backends[s] = "termux";
         dockerExecIds[s] = null;

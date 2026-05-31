@@ -73,6 +73,8 @@ const XTERM_SCROLLBACK = 20000;
 const XTERM_TRANSCRIPT_LIMIT = 1024 * 1024;
 const SESSION_COUNT = 4;
 const HIDDEN_SESSION_BACKLOG_LIMIT = 1024 * 1024;
+const TERMINAL_FONT_FAMILY = '"Droid Sans Mono","Roboto Mono","Noto Sans Mono CJK JP",monospace';
+const TERMINAL_LINE_HEIGHT = 1.2;
 let fontSize = DEFAULT_FONT_SIZE;
 let activePane = 0;
 let split = false;
@@ -279,7 +281,7 @@ class VirtualTerm {
     this.charH = height / rows;
     this.resize(cols, rows);
   }
-  font() { return `${this.options.fontSize}px "Noto Sans Mono CJK JP","Droid Sans Mono","Roboto Mono",monospace`; }
+  font() { return `px `; }
   resize(cols, rows) {
     cols = Math.max(8, Math.floor(cols)); rows = Math.max(4, Math.floor(rows));
     const oldRows = this.rows;
@@ -333,6 +335,9 @@ class VirtualTerm {
   clearTextureAtlas() {}
   refresh() { this.requestRender(); }
   clear() { this.pushScreenToScrollback(); this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.viewOffset = 0; this.initLines(); this.clearSelection(); this.schedulePersist(); this.requestRender(); }
+  restoreReplay(text) {
+    this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.viewOffset = 0; this.scrollback = []; this.initLines(); this.clearSelection(); this.parse(String(text || '')); this.requestRender();
+  }
   select(x, y, len) { this.selection = { start:y * this.cols + x, end:y * this.cols + x + Math.max(1, len) - 1 }; this.requestRender(); }
   setSelectionRange(start, end) { this.selection = { start, end }; this.requestRender(); }
   clearSelection() { this.selection = null; this.requestRender(); }
@@ -681,8 +686,8 @@ class XtermCompat {
     this.element = host;
     this.options = { fontSize: opts.fontSize || DEFAULT_FONT_SIZE };
     this.term = new Terminal({
-      termName:'xterm-256color', fontFamily:'"Noto Sans Mono CJK JP","Droid Sans Mono","Roboto Mono",monospace', fontSize:this.options.fontSize,
-      lineHeight:1.2, cursorBlink:false, cursorStyle:'block', customGlyphs:false, windowsMode:true, scrollback:XTERM_SCROLLBACK, convertEol:false,
+      termName:'xterm-256color', fontFamily:TERMINAL_FONT_FAMILY, fontSize:this.options.fontSize,
+      lineHeight:TERMINAL_LINE_HEIGHT, cursorBlink:false, cursorStyle:'block', customGlyphs:false, windowsMode:true, scrollback:XTERM_SCROLLBACK, convertEol:false,
       theme:{ background:palette.defaultBg, foreground:palette.defaultFg, cursor:palette.cursor, selectionBackground:palette.selection,
         black:palette.normal[0], red:palette.normal[1], green:palette.normal[2], yellow:palette.normal[3], blue:palette.normal[4], magenta:palette.normal[5], cyan:palette.normal[6], white:palette.normal[7],
         brightBlack:palette.bright[0], brightRed:palette.bright[1], brightGreen:palette.bright[2], brightYellow:palette.bright[3], brightBlue:palette.bright[4], brightMagenta:palette.bright[5], brightCyan:palette.bright[6], brightWhite:palette.bright[7] }
@@ -798,6 +803,14 @@ class XtermCompat {
     this.term.write(filtered, cb);
   }
   clear() { this.term.clear(); }
+  restoreReplay(text) {
+    this.term.reset();
+    this.filterBuffer = "";
+    this.transcript = String(text || "").slice(-XTERM_TRANSCRIPT_LIMIT);
+    if (!this.transcript) { this.refresh(); return; }
+    this.restoring = true;
+    this.term.write(this.filterOutput(this.transcript), () => { this.restoring = false; this.refresh(); });
+  }
   refresh() { try { this.term.clearTextureAtlas(); this.term.refresh(0, this.term.rows - 1); } catch (_) {} }
   scrollView(delta) { try { this.term.scrollLines(-delta); } catch (_) {} }
   getViewState() {
@@ -824,6 +837,9 @@ class XtermCompat {
     } catch (_) {}
   }
   clearTextureAtlas() { try { this.term.clearTextureAtlas(); } catch (_) {} }
+  restoreReplay(text) {
+    this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.viewOffset = 0; this.scrollback = []; this.initLines(); this.clearSelection(); this.parse(String(text || '')); this.requestRender();
+  }
   select(x, y, len) { this.term.select(x, y, len); }
   clearSelection() { this.term.clearSelection(); }
   setCompositionPreview(_) {}
@@ -842,8 +858,15 @@ function makePane(index) {
 const panes = [makePane(0), makePane(1)];
 const sessionDecoders = Array.from({ length:SESSION_COUNT }, () => new TextDecoder('utf-8'));
 const hiddenSessionBacklog = Array.from({ length:SESSION_COUNT }, () => '');
+const sessionReplayText = Array.from({ length:SESSION_COUNT }, () => '');
 for (const p of panes) { p.pending = ''; p.writeScheduled = false; }
 function normalizeSessionId(session) { return Math.max(0, Math.min(SESSION_COUNT - 1, Number(session) || 0)); }
+function appendSessionReplay(session, text) {
+  const s = normalizeSessionId(session);
+  if (!text) return;
+  sessionReplayText[s] = (sessionReplayText[s] || "") + text;
+  if (sessionReplayText[s].length > XTERM_TRANSCRIPT_LIMIT) sessionReplayText[s] = sessionReplayText[s].slice(-XTERM_TRANSCRIPT_LIMIT);
+}
 function appendHiddenSessionBacklog(session, text) {
   const s = normalizeSessionId(session);
   if (!text) return;
@@ -987,6 +1010,7 @@ function terminalWriteBase64(session, b64) {
   const s = normalizeSessionId(session);
   const bytes = fromB64(b64);
   const text = sessionDecoders[s].decode(bytes, { stream:true });
+  appendSessionReplay(s, text);
   let delivered = false;
   for (const p of panes) {
     if (p.session === s) { queueWrite(p, text); delivered = true; }
@@ -999,18 +1023,19 @@ function resetPaneForSession(paneIndex, session) {
   const p = panes[paneIndex];
   p.pending = '';
   p.writeScheduled = false;
+  p.lastRows = -1;
+  p.lastCols = -1;
   p.session = session;
   p.decoder = new TextDecoder('utf-8');
   if (p.term.setPersistKey) p.term.setPersistKey('session-' + session);
   else { p.term.clear(); p.term.refresh(); }
   const hiddenBacklog = drainHiddenSessionBacklog(session);
-  if (hiddenBacklog) {
-    setTimeout(() => {
-      if (p.session === session) {
-        queueWrite(p, hiddenBacklog);
-        setTimeout(() => { try { if (p.term.persistNow) p.term.persistNow(); } catch (_) {} }, PERSIST_DELAY_MS);
-      }
-    }, REFRESH_AFTER_FIT_MS);
+  if (hiddenBacklog) appendSessionReplay(session, hiddenBacklog);
+  const replayText = sessionReplayText[normalizeSessionId(session)] || "";
+  if (replayText && p.term.restoreReplay) {
+    setTimeout(() => { if (p.session === session) p.term.restoreReplay(replayText); }, REFRESH_AFTER_FIT_MS);
+  } else if (hiddenBacklog) {
+    setTimeout(() => { if (p.session === session) queueWrite(p, hiddenBacklog); }, REFRESH_AFTER_FIT_MS);
   }
   document.querySelector('#pane' + paneIndex + ' .paneTitle').textContent = 'S' + (session + 1);
   restorePaneViewSoon(paneIndex);
