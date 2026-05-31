@@ -838,9 +838,6 @@ class XtermCompat {
     } catch (_) {}
   }
   clearTextureAtlas() { try { this.term.clearTextureAtlas(); } catch (_) {} }
-  restoreReplay(text) {
-    this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.viewOffset = 0; this.scrollback = []; this.initLines(); this.clearSelection(); this.parse(String(text || '')); this.requestRender();
-  }
   select(x, y, len) { this.term.select(x, y, len); }
   clearSelection() { this.term.clearSelection(); }
   setCompositionPreview(_) {}
