@@ -40,7 +40,7 @@ public class MainActivity extends Activity {
     private static final String DEFAULT_DOCKER_API_HOST = "127.0.0.1";
     private static final int DEFAULT_DOCKER_API_PORT = 2375;
     private static final String PREF_DOCKER_ENDPOINT = "docker_endpoint";
-    private static final int MAX_SESSIONS = 4;
+    private static final int MAX_SESSIONS = 8;
     private static final String TERMUX_PACKAGE = "com.termux";
     private static final String RUN_COMMAND_PERMISSION = "com.termux.permission.RUN_COMMAND";
     private static final String TERMUX_SETUP_COMMAND = "mkdir -p ~/.termux && "
@@ -51,11 +51,11 @@ public class MainActivity extends Activity {
     private final ExecutorService io = Executors.newCachedThreadPool();
     private final Socket[] sockets = new Socket[MAX_SESSIONS];
     private final OutputStream[] socketOuts = new OutputStream[MAX_SESSIONS];
-    private final String[] backends = new String[]{"termux", "termux", "termux", "termux"};
+    private final String[] backends = new String[]{"termux", "termux", "termux", "termux", "termux", "termux", "termux", "termux"};
     private final String[] dockerExecIds = new String[MAX_SESSIONS];
     private final String[] dockerContainerIds = new String[MAX_SESSIONS];
-    private final int[] rows = new int[]{32, 32, 32, 32};
-    private final int[] cols = new int[]{100, 100, 100, 100};
+    private final int[] rows = new int[]{32, 32, 32, 32, 32, 32, 32, 32};
+    private final int[] cols = new int[]{100, 100, 100, 100, 100, 100, 100, 100};
     private WebView webView;
     private String bridgeAssetBase64;
     private String dockerApiHost = DEFAULT_DOCKER_API_HOST;

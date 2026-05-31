@@ -71,7 +71,7 @@ const POINTER_MOVE_CANCEL_PX = 14;
 const SWIPE_SESSION_THRESHOLD_PX = 72;
 const XTERM_SCROLLBACK = 20000;
 const XTERM_TRANSCRIPT_LIMIT = 1024 * 1024;
-const SESSION_COUNT = 4;
+const SESSION_COUNT = 8;
 const HIDDEN_SESSION_BACKLOG_LIMIT = 1024 * 1024;
 const TERMINAL_FONT_FAMILY = '"Droid Sans Mono","Roboto Mono","Noto Sans Mono CJK JP",monospace';
 const TERMINAL_LINE_HEIGHT = 1.2;
@@ -1362,7 +1362,7 @@ function requestDockerContainers() {
 window.setDockerContainers = payload => { renderDockerBar(payload || {}); setDockerBarOpen(true); };
 const sessions = document.getElementById('sessions');
 function refreshSessions() { for (const [i,b] of [...sessions.children].entries()) b.classList.toggle('active', i === active().session); }
-for (let i=0; i<4; i++) { const b=document.createElement('button'); b.textContent='S'+(i+1); b.onclick=()=>switchPaneSession(activePane, i, true); sessions.appendChild(b); }
+for (let i=0; i<SESSION_COUNT; i++) { const b=document.createElement('button'); b.textContent='S'+(i+1); b.onclick=()=>switchPaneSession(activePane, i, true); sessions.appendChild(b); }
 refreshSessions();
 function refreshModeButton() { const b = document.getElementById('mode'); b.textContent = rendererMode === 'safe' ? 'Xterm' : 'Buffer'; b.classList.toggle('active', rendererMode === 'buffer'); }
 document.getElementById('mode').onclick = () => { rendererMode = rendererMode === 'safe' ? 'buffer' : 'safe'; saveLayout(); location.reload(); };
