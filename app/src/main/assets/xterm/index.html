@@ -68,6 +68,7 @@ const SELECTION_RELEASE_BLOCK_MS = 160;
 const SELECTION_ACTIVE_BLOCK_MS = 100000;
 const SCROLL_TOUCH_THRESHOLD_PX = 18;
 const POINTER_MOVE_CANCEL_PX = 14;
+const SWIPE_SESSION_THRESHOLD_PX = 72;
 const XTERM_SCROLLBACK = 20000;
 const XTERM_TRANSCRIPT_LIMIT = 1024 * 1024;
 let fontSize = DEFAULT_FONT_SIZE;
@@ -708,21 +709,7 @@ class XtermCompat {
   fit() {
     this.term.options.fontSize = this.options.fontSize;
     this.fitAddon.fit();
-    this.resizeToHost();
     this.refresh();
-  }
-  resizeToHost() {
-    try {
-      const dims = this.term._core && this.term._core._renderService && this.term._core._renderService.dimensions;
-      const cell = dims && dims.css && dims.css.cell;
-      const cellW = Number(cell && cell.width) || 0;
-      const cellH = Number(cell && cell.height) || 0;
-      const rect = this.host.getBoundingClientRect();
-      if (!cellW || !cellH || rect.width <= 0 || rect.height <= 0) return;
-      const cols = Math.max(8, Math.floor(rect.width / cellW));
-      const rows = Math.max(4, Math.floor(rect.height / cellH));
-      if (cols !== this.term.cols || rows !== this.term.rows) this.term.resize(cols, rows);
-    } catch (_) {}
   }
   focus() { this.term.focus(); }
   setPersistKey(key) {
@@ -939,8 +926,12 @@ function isTerminalInputFocused() {
   return panes.some(p => document.activeElement === p.term.textarea);
 }
 let resizeTimer = null;
+function androidCssHeight() {
+  try { return Android.webViewCssHeight ? Number(Android.webViewCssHeight()) || 0 : 0; } catch (_) { return 0; }
+}
 function viewportHeight() {
-  return Math.round((window.visualViewport && window.visualViewport.height) || window.innerHeight || 0);
+  const values = [window.innerHeight || 0, window.visualViewport && window.visualViewport.height || 0, androidCssHeight()].filter(v => v > 0);
+  return Math.floor(values.length ? Math.min(...values) : 0);
 }
 function applyViewportHeight() {
   const h = viewportHeight();
@@ -1086,6 +1077,23 @@ function cellFromPoint(term, point) {
 }
 function cellIndex(term, cell) { return cell.y * term.cols + cell.x; }
 function pointMovedFar(a, b) { if (!a || !b) return false; return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) > POINTER_MOVE_CANCEL_PX; }
+let lastSessionSwipeAt = 0;
+function switchSessionBySwipe(paneIndex, direction) {
+  const now = Date.now();
+  if (now - lastSessionSwipeAt < 350) return;
+  lastSessionSwipeAt = now;
+  paneIndex = normalizePaneIndex(paneIndex);
+  const current = panes[paneIndex].session;
+  const next = (current + direction + 4) % 4;
+  if (next !== current) switchPaneSession(paneIndex, next, true);
+}
+function scrollLinesForDelta(term, dy) {
+  const element = term.element || term.host || document.getElementById("terms");
+  const rect = element.getBoundingClientRect();
+  const rows = Math.max(1, term.rows || DEFAULT_ROWS);
+  const cellH = Math.max(6, rect.height / rows);
+  return Math.max(1, Math.min(rows * 2, Math.round(Math.abs(dy) / cellH * 1.6)));
+}
 function applySelectionMode() {
   if (!selectionMode) return;
   const term = panes[selectionMode.pane].term;
@@ -1128,7 +1136,7 @@ for (let i=0; i<panes.length; i++) {
     }
     if (longPressTimer) clearTimeout(longPressTimer);
     pointerSelection = { pane:i, pointerId:ev.pointerId };
-    pointerScroll = { pane:i, pointerId:ev.pointerId, y:ev.clientY, active:false };
+    pointerScroll = { pane:i, pointerId:ev.pointerId, x:ev.clientX, y:ev.clientY, startX:ev.clientX, startY:ev.clientY, active:false, swiped:false };
     longPressTimer = setTimeout(() => {
       beginSelectionDrag(i, ev.pointerId, startCell, host, false);
     }, LONG_PRESS_MS);
@@ -1142,6 +1150,15 @@ for (let i=0; i<panes.length; i++) {
       return;
     }
     if (pointerScroll && pointerScroll.pane === i && ev.pointerId === pointerScroll.pointerId && !selectionMode) {
+      const dx = ev.clientX - pointerScroll.startX;
+      const dyTotal = ev.clientY - pointerScroll.startY;
+      if (!pointerScroll.swiped && Math.abs(dx) > SWIPE_SESSION_THRESHOLD_PX && Math.abs(dx) > Math.abs(dyTotal) * 1.35) {
+        ev.preventDefault();
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        pointerSelection = null; selectionStartPoint = null; pointerScroll.swiped = true;
+        switchSessionBySwipe(i, dx < 0 ? 1 : -1);
+        return;
+      }
       const dy = ev.clientY - pointerScroll.y;
       if (Math.abs(dy) > SCROLL_TOUCH_THRESHOLD_PX) {
         ev.preventDefault();
@@ -1149,7 +1166,7 @@ for (let i=0; i<panes.length; i++) {
         pointerSelection = null;
         pointerScroll.active = true;
         const t = panes[i].term;
-        if (t.scrollView) { t.scrollView(dy > 0 ? 3 : -3); rememberPaneView(i); }
+        if (t.scrollView) { const lines = scrollLinesForDelta(t, dy); t.scrollView(dy > 0 ? lines : -lines); rememberPaneView(i); }
         pointerScroll.y = ev.clientY;
         return;
       }
@@ -1170,17 +1187,26 @@ function paneIndexFromTarget(target) {
 }
 let scrollTouch = null;
 document.getElementById('terms').addEventListener('touchstart', ev => {
-  if (ev.touches.length === 1 && !selectionMode) scrollTouch = { y: ev.touches[0].clientY, pane: paneIndexFromTarget(ev.target) };
+  if (ev.touches.length === 1 && !selectionMode) scrollTouch = { x: ev.touches[0].clientX, y: ev.touches[0].clientY, startX: ev.touches[0].clientX, startY: ev.touches[0].clientY, pane: paneIndexFromTarget(ev.target), swiped:false };
 }, { passive:true });
 document.getElementById('terms').addEventListener('touchmove', ev => {
   if (!scrollTouch || selectionMode || ev.touches.length !== 1) return;
   const touch = ev.touches[0];
+  const dx = touch.clientX - scrollTouch.startX;
+  const dyTotal = touch.clientY - scrollTouch.startY;
+  if (!scrollTouch.swiped && Math.abs(dx) > SWIPE_SESSION_THRESHOLD_PX && Math.abs(dx) > Math.abs(dyTotal) * 1.35) {
+    ev.preventDefault();
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    pointerSelection = null; pointerScroll = null; selectionStartPoint = null; scrollTouch.swiped = true;
+    switchSessionBySwipe(scrollTouch.pane, dx < 0 ? 1 : -1);
+    return;
+  }
   const dy = touch.clientY - scrollTouch.y;
   if (Math.abs(dy) > SCROLL_TOUCH_THRESHOLD_PX) {
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
     pointerSelection = null; pointerScroll = null; selectionStartPoint = null;
     const t = panes[scrollTouch.pane].term;
-    if (t.scrollView) { ev.preventDefault(); t.scrollView(dy > 0 ? 3 : -3); rememberPaneView(scrollTouch.pane); scrollTouch.y = touch.clientY; }
+    if (t.scrollView) { ev.preventDefault(); const lines = scrollLinesForDelta(t, dy); t.scrollView(dy > 0 ? lines : -lines); rememberPaneView(scrollTouch.pane); scrollTouch.y = touch.clientY; }
   }
 }, { passive:false });
 document.getElementById('terms').addEventListener('touchend', () => { scrollTouch = null; }, { passive:true });

@@ -363,6 +363,12 @@ public class MainActivity extends Activity {
         return dockerApiHost + ":" + dockerApiPort;
     }
 
+    private float webViewCssHeight() {
+        if (webView == null) return 0f;
+        float density = Math.max(1f, getResources().getDisplayMetrics().density);
+        return webView.getHeight() / density;
+    }
+
     private void loadDockerEndpoint() {
         String saved = getPreferences(MODE_PRIVATE).getString(PREF_DOCKER_ENDPOINT, DEFAULT_DOCKER_API_HOST + ":" + DEFAULT_DOCKER_API_PORT);
         setDockerEndpointInternal(saved, false);
@@ -722,6 +728,13 @@ public class MainActivity extends Activity {
         public String dockerEndpoint() {
             return MainActivity.this.dockerEndpoint();
         }
+
+        @JavascriptInterface
+        public float webViewCssHeight() {
+            return MainActivity.this.webViewCssHeight();
+        }
+
+
 
         @JavascriptInterface
         public void copyText(String text) {
