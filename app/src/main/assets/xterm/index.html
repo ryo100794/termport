@@ -74,7 +74,9 @@ let imeSuppressText = '';
 let imeSuppressUntil = 0;
 const storageKey = 'termPortLayoutV3';
 const scrollbackStoragePrefix = 'imeConsoleScrollbackV1:';
-function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split, activePane, fontSize, rendererMode, sessions: panes.map(p => p.session) })); } catch (_) {} }
+const sessionViewStates = {};
+let viewStateSaveTimer = null;
+function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split, activePane, fontSize, rendererMode, sessions: panes.map(p => p.session), viewStates: sessionViewStates })); } catch (_) {} }
 function loadLayout() { try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (_) { return {}; } }
 let rendererMode = loadLayout().rendererMode === 'buffer' ? 'buffer' : 'safe';
 function clampFontSize(value) { return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(value * 10) / 10)); }
@@ -541,6 +543,12 @@ class VirtualTerm {
     this.viewOffset = Math.max(0, Math.min(max, this.viewOffset + delta));
     this.requestRender();
   }
+  getViewState() { return { atBottom:this.viewOffset === 0, offset:Math.max(0, this.viewOffset || 0) }; }
+  restoreViewState(state) {
+    const offset = state && !state.atBottom ? Math.max(0, Number(state.offset) || 0) : 0;
+    this.viewOffset = Math.max(0, Math.min(this.scrollback.length, offset));
+    this.requestRender();
+  }
   visibleLines() {
     if (!this.viewOffset) return this.lines;
     const combined = this.scrollback.concat(this.lines);
@@ -780,6 +788,29 @@ class XtermCompat {
   clear() { this.term.clear(); }
   refresh() { try { this.term.clearTextureAtlas(); this.term.refresh(0, this.term.rows - 1); } catch (_) {} }
   scrollView(delta) { try { this.term.scrollLines(-delta); } catch (_) {} }
+  getViewState() {
+    try {
+      const buffer = this.term.buffer && this.term.buffer.active;
+      if (!buffer) return { atBottom:true, offset:0 };
+      const offset = Math.max(0, Number(buffer.baseY || 0) - Number(buffer.viewportY || 0));
+      return { atBottom:offset === 0, offset };
+    } catch (_) { return { atBottom:true, offset:0 }; }
+  }
+  restoreViewState(state) {
+    try {
+      const buffer = this.term.buffer && this.term.buffer.active;
+      if (!buffer || !state || state.atBottom) {
+        if (this.term.scrollToBottom) this.term.scrollToBottom();
+        else this.term.scrollLines(1000000);
+        return;
+      }
+      const baseY = Number(buffer.baseY || 0);
+      const viewportY = Number(buffer.viewportY || 0);
+      const target = Math.max(0, baseY - Math.max(0, Number(state.offset) || 0));
+      if (this.term.scrollToLine) this.term.scrollToLine(target);
+      else this.term.scrollLines(target - viewportY);
+    } catch (_) {}
+  }
   clearTextureAtlas() { try { this.term.clearTextureAtlas(); } catch (_) {} }
   select(x, y, len) { this.term.select(x, y, len); }
   clearSelection() { this.term.clearSelection(); }
@@ -812,10 +843,45 @@ function queueWrite(p, text) {
 function isPaneVisible(index) { return split || index === 0; }
 function normalizePaneIndex(index) { return isPaneVisible(index) ? index : 0; }
 function active() { activePane = normalizePaneIndex(activePane); return panes[activePane]; }
+function paneViewSnapshot(index) {
+  const p = panes[index];
+  if (!p || !p.term.getViewState) return null;
+  return { session:p.session, state:p.term.getViewState() };
+}
+function scheduleViewStateSave() {
+  if (viewStateSaveTimer) clearTimeout(viewStateSaveTimer);
+  viewStateSaveTimer = setTimeout(() => { viewStateSaveTimer = null; saveLayout(); }, PERSIST_DELAY_MS);
+}
+function rememberPaneView(index) {
+  const snap = paneViewSnapshot(index);
+  if (snap) { sessionViewStates[snap.session] = snap.state; scheduleViewStateSave(); }
+}
+function rememberVisiblePaneViews() { panes.forEach((_, i) => { if (isPaneVisible(i)) rememberPaneView(i); }); }
+function restorePaneView(index, state=sessionViewStates[panes[index].session]) {
+  const p = panes[index];
+  if (!p || !isPaneVisible(index) || !p.term.restoreViewState) return;
+  p.term.restoreViewState(state || { atBottom:true, offset:0 });
+}
+function restorePaneViewSoon(index, state=sessionViewStates[panes[index].session]) {
+  for (const delay of [0, REFRESH_AFTER_FIT_MS, RESIZE_SLOW_DELAY_MS, 360, 700]) {
+    setTimeout(() => restorePaneView(index, state), delay);
+  }
+}
+function restoreSnapshots(snapshots) {
+  snapshots.forEach((snap, i) => { if (snap && panes[i] && panes[i].session === snap.session) restorePaneView(i, snap.state); });
+}
+function restoreSnapshotsSoon(snapshots) {
+  for (const delay of [0, REFRESH_AFTER_FIT_MS, RESIZE_SLOW_DELAY_MS, 360, 700]) {
+    setTimeout(() => restoreSnapshots(snapshots), delay);
+  }
+}
 function relayout(reason='layout') {
+  const snapshots = panes.map((_, i) => paneViewSnapshot(i));
+  rememberVisiblePaneViews();
   fitAll(reason);
-  for (const delay of [REFRESH_AFTER_FIT_MS, RESIZE_SLOW_DELAY_MS, 360]) {
-    setTimeout(() => fitAll(reason + '-' + delay), delay);
+  restoreSnapshots(snapshots);
+  for (const delay of [REFRESH_AFTER_FIT_MS, RESIZE_SLOW_DELAY_MS, 360, 700]) {
+    setTimeout(() => { fitAll(reason + '-' + delay); restoreSnapshots(snapshots); }, delay);
   }
 }
 function refocusActiveSoon() { setTimeout(() => { try { active().term.focus(); } catch (_) {} }, REFOCUS_DELAY_MS); }
@@ -845,7 +911,7 @@ function fitAll(reason='layout') {
     sendResize(i);
   });
 }
-function setFontSize(value) { fontSize = clampFontSize(value); fitAll('font'); saveLayout(); }
+function setFontSize(value) { fontSize = clampFontSize(value); relayout('font'); saveLayout(); }
 function isTerminalInputFocused() {
   return panes.some(p => document.activeElement === p.term.textarea);
 }
@@ -877,7 +943,7 @@ function scheduleWindowFit() {
 }
 function setActivePane(index) {
   index = normalizePaneIndex(index);
-  if (index !== activePane) exitSelectionMode(false);
+  if (index !== activePane) { rememberPaneView(activePane); exitSelectionMode(false); }
   activePane = index;
   document.getElementById('pane0').classList.toggle('active', index === 0);
   document.getElementById('pane1').classList.toggle('active', index === 1);
@@ -894,6 +960,7 @@ function terminalWriteBase64(session, b64) {
 }
 window.terminalWriteBase64 = terminalWriteBase64;
 function resetPaneForSession(paneIndex, session) {
+  rememberPaneView(paneIndex);
   const p = panes[paneIndex];
   p.pending = '';
   p.writeScheduled = false;
@@ -902,6 +969,7 @@ function resetPaneForSession(paneIndex, session) {
   if (p.term.setPersistKey) p.term.setPersistKey('session-' + session);
   else { p.term.clear(); p.term.refresh(); }
   document.querySelector('#pane' + paneIndex + ' .paneTitle').textContent = 'S' + (session + 1);
+  restorePaneViewSoon(paneIndex);
 }
 function switchPaneSession(paneIndex, session, connect=true) {
   paneIndex = normalizePaneIndex(paneIndex);
@@ -915,7 +983,7 @@ function switchPaneSession(paneIndex, session, connect=true) {
   panes[paneIndex].term.focus();
 }
 window.flushScrollback = function() {
-  try { for (const p of panes) if (p.term.persistNow) p.term.persistNow(); } catch (_) {}
+  try { rememberVisiblePaneViews(); saveLayout(); for (const p of panes) if (p.term.persistNow) p.term.persistNow(); } catch (_) {}
 };
 window.addEventListener('pagehide', window.flushScrollback);
 document.addEventListener('visibilitychange', () => { if (document.hidden) window.flushScrollback(); });
@@ -1058,7 +1126,7 @@ for (let i=0; i<panes.length; i++) {
         pointerSelection = null;
         pointerScroll.active = true;
         const t = panes[i].term;
-        if (t.scrollView) t.scrollView(dy > 0 ? 3 : -3);
+        if (t.scrollView) { t.scrollView(dy > 0 ? 3 : -3); rememberPaneView(i); }
         pointerScroll.y = ev.clientY;
         return;
       }
@@ -1071,11 +1139,11 @@ for (let i=0; i<panes.length; i++) {
   }, { passive:false });
   host.addEventListener('pointerup', ev => finishSelectionDrag(i, ev), { passive:true });
   host.addEventListener('pointercancel', ev => finishSelectionDrag(i, ev), { passive:true });
-  host.addEventListener('wheel', ev => { const t=panes[i].term; if (t.scrollView) { ev.preventDefault(); t.scrollView(ev.deltaY < 0 ? 3 : -3); } }, { passive:false });
+  host.addEventListener('wheel', ev => { const t=panes[i].term; if (t.scrollView) { ev.preventDefault(); t.scrollView(ev.deltaY < 0 ? 3 : -3); rememberPaneView(i); } }, { passive:false });
 }
 let scrollTouch = null;
 document.getElementById('terms').addEventListener('touchstart', ev => { if (ev.touches.length === 1 && !selectionMode && !longPressTimer) scrollTouch = { y: ev.touches[0].clientY, pane: activePane }; }, { passive:true });
-document.getElementById('terms').addEventListener('touchmove', ev => { if (!scrollTouch || selectionMode || longPressTimer || ev.touches.length !== 1) return; const dy = ev.touches[0].clientY - scrollTouch.y; if (Math.abs(dy) > SCROLL_TOUCH_THRESHOLD_PX) { const t=panes[scrollTouch.pane].term; if (t.scrollView) { ev.preventDefault(); t.scrollView(dy > 0 ? 2 : -2); scrollTouch.y = ev.touches[0].clientY; } } }, { passive:false });
+document.getElementById('terms').addEventListener('touchmove', ev => { if (!scrollTouch || selectionMode || longPressTimer || ev.touches.length !== 1) return; const dy = ev.touches[0].clientY - scrollTouch.y; if (Math.abs(dy) > SCROLL_TOUCH_THRESHOLD_PX) { const t=panes[scrollTouch.pane].term; if (t.scrollView) { ev.preventDefault(); t.scrollView(dy > 0 ? 2 : -2); rememberPaneView(scrollTouch.pane); scrollTouch.y = ev.touches[0].clientY; } } }, { passive:false });
 document.getElementById('terms').addEventListener('touchend', () => { scrollTouch = null; }, { passive:true });
 document.getElementById('copySel').onclick = copySelection;
 document.getElementById('clearSel').onclick = clearSelection;
@@ -1109,6 +1177,7 @@ function refreshModeButton() { const b = document.getElementById('mode'); b.text
 document.getElementById('mode').onclick = () => { rendererMode = rendererMode === 'safe' ? 'buffer' : 'safe'; saveLayout(); location.reload(); };
 refreshModeButton();
 function applySplitState(enabled, persist=true) {
+  rememberVisiblePaneViews();
   split = !!enabled;
   document.body.classList.toggle('single', !split);
   document.getElementById('split').classList.toggle('active', split);
@@ -1135,6 +1204,7 @@ setTimeout(() => {
   if (saved.rendererMode === 'safe' || saved.rendererMode === 'buffer') rendererMode = saved.rendererMode;
   refreshModeButton();
   if (typeof saved.fontSize === 'number') fontSize = clampFontSize(saved.fontSize);
+  if (saved.viewStates && typeof saved.viewStates === 'object') Object.assign(sessionViewStates, saved.viewStates);
   applySplitState(split, false);
   if (Array.isArray(saved.sessions)) {
     for (let i=0; i<Math.min(saved.sessions.length, panes.length); i++) {
