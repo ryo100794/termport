@@ -9,9 +9,9 @@
   body { display:flex; flex-direction:column; }
   #top { display:flex; gap:6px; align-items:center; padding:6px 8px; background:#181b1f; color:#f1f3f4; font-size:13px; }
   #status { flex:1 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  #sessions { display:flex; gap:4px; overflow-x:auto; padding:5px 6px; background:#111418; scrollbar-width:none; }
+  #sessions, #dockerBar { display:flex; gap:4px; overflow-x:auto; padding:5px 6px; background:#111418; scrollbar-width:none; }
   #keys { display:grid; grid-auto-flow:column; grid-template-rows:repeat(2,28px); grid-auto-columns:max-content; gap:3px; overflow-x:auto; padding:4px 6px; background:#111418; scrollbar-width:none; }
-  #sessions::-webkit-scrollbar, #keys::-webkit-scrollbar { display:none; }
+  #sessions::-webkit-scrollbar, #dockerBar::-webkit-scrollbar, #keys::-webkit-scrollbar { display:none; }
   #terms { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; background:#050505; }
   .pane { flex:1 1 0; min-height:0; display:flex; flex-direction:column; border-top:1px solid #293039; }
   .pane:first-child { border-top:0; }
@@ -19,6 +19,8 @@
   .paneTitle { flex:0 0 auto; height:3px; padding:0; overflow:hidden; background:#15181c; color:transparent; font-size:0; line-height:0; }
   .term { flex:1 1 auto; min-height:0; overflow:hidden; background:#050505; touch-action:none; position:relative; }
   .term canvas { display:block; background:#050505; }
+  .term .xterm { width:100%; height:100%; padding:0; }
+  .term .xterm-viewport { overflow:hidden !important; }
   .term textarea { position:absolute; left:0; top:0; width:100%; height:100%; opacity:.01; border:0; padding:0; resize:none; color:transparent; background:transparent; caret-color:transparent; outline:0; z-index:1; }
   body.single #pane1 { display:none; }
   button { flex:0 0 auto; min-width:32px; height:28px; padding:0 6px; border:1px solid #3a3a3a; border-radius:5px; background:#23272d; color:#eee; font:10.5px system-ui,sans-serif; white-space:nowrap; }
@@ -26,12 +28,15 @@
   button:active { background:#444; }
   .keySpacer { width:32px; height:28px; }
   .keyGap { width:8px; height:28px; }
+  #dockerBar { display:none; background:#15191e; }
+  #dockerBar.open { display:flex; }
   #terms, .term { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 </style>
 </head>
 <body class="single">
-  <div id="top"><div id="status">starting</div><button id="mode">Buffer</button><button id="split">Split</button><button id="copySel">Copy</button><button id="clearSel">Clear</button><button id="redraw">Redraw</button><button id="setup">Setup</button><button id="skydnir">Skydnir</button><button id="connect">Connect</button></div>
+  <div id="top"><div id="status">starting</div><button id="mode">Buffer</button><button id="split">Split</button><button id="copySel">Copy</button><button id="clearSel">Clear</button><button id="redraw">Redraw</button><button id="setup">Setup</button><button id="skydnir">Docker</button><button id="connect">Connect</button></div>
   <div id="sessions"></div>
+  <div id="dockerBar"></div>
   <div id="terms">
     <div class="pane active" id="pane0"><div class="paneTitle">S1</div><div class="term" id="term0"></div></div>
     <div class="pane" id="pane1"><div class="paneTitle">S2</div><div class="term" id="term1"></div></div>
@@ -700,7 +705,25 @@ class XtermCompat {
   set cols(_) {}
   onData(cb) { this.dataHandlers.push(cb); }
   emitData(data) { for (const cb of this.dataHandlers) cb(data); }
-  fit() { this.term.options.fontSize = this.options.fontSize; this.fitAddon.fit(); this.refresh(); }
+  fit() {
+    this.term.options.fontSize = this.options.fontSize;
+    this.fitAddon.fit();
+    this.resizeToHost();
+    this.refresh();
+  }
+  resizeToHost() {
+    try {
+      const dims = this.term._core && this.term._core._renderService && this.term._core._renderService.dimensions;
+      const cell = dims && dims.css && dims.css.cell;
+      const cellW = Number(cell && cell.width) || 0;
+      const cellH = Number(cell && cell.height) || 0;
+      const rect = this.host.getBoundingClientRect();
+      if (!cellW || !cellH || rect.width <= 0 || rect.height <= 0) return;
+      const cols = Math.max(8, Math.floor(rect.width / cellW));
+      const rows = Math.max(4, Math.floor(rect.height / cellH));
+      if (cols !== this.term.cols || rows !== this.term.rows) this.term.resize(cols, rows);
+    } catch (_) {}
+  }
   focus() { this.term.focus(); }
   setPersistKey(key) {
     if (this.persistKey && this.persistKey !== key) this.persistNow();
@@ -1141,9 +1164,25 @@ for (let i=0; i<panes.length; i++) {
   host.addEventListener('pointercancel', ev => finishSelectionDrag(i, ev), { passive:true });
   host.addEventListener('wheel', ev => { const t=panes[i].term; if (t.scrollView) { ev.preventDefault(); t.scrollView(ev.deltaY < 0 ? 3 : -3); rememberPaneView(i); } }, { passive:false });
 }
+function paneIndexFromTarget(target) {
+  const pane = target && target.closest ? target.closest('.pane') : null;
+  return normalizePaneIndex(pane && pane.id === 'pane1' ? 1 : 0);
+}
 let scrollTouch = null;
-document.getElementById('terms').addEventListener('touchstart', ev => { if (ev.touches.length === 1 && !selectionMode && !longPressTimer) scrollTouch = { y: ev.touches[0].clientY, pane: activePane }; }, { passive:true });
-document.getElementById('terms').addEventListener('touchmove', ev => { if (!scrollTouch || selectionMode || longPressTimer || ev.touches.length !== 1) return; const dy = ev.touches[0].clientY - scrollTouch.y; if (Math.abs(dy) > SCROLL_TOUCH_THRESHOLD_PX) { const t=panes[scrollTouch.pane].term; if (t.scrollView) { ev.preventDefault(); t.scrollView(dy > 0 ? 2 : -2); rememberPaneView(scrollTouch.pane); scrollTouch.y = ev.touches[0].clientY; } } }, { passive:false });
+document.getElementById('terms').addEventListener('touchstart', ev => {
+  if (ev.touches.length === 1 && !selectionMode) scrollTouch = { y: ev.touches[0].clientY, pane: paneIndexFromTarget(ev.target) };
+}, { passive:true });
+document.getElementById('terms').addEventListener('touchmove', ev => {
+  if (!scrollTouch || selectionMode || ev.touches.length !== 1) return;
+  const touch = ev.touches[0];
+  const dy = touch.clientY - scrollTouch.y;
+  if (Math.abs(dy) > SCROLL_TOUCH_THRESHOLD_PX) {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    pointerSelection = null; pointerScroll = null; selectionStartPoint = null;
+    const t = panes[scrollTouch.pane].term;
+    if (t.scrollView) { ev.preventDefault(); t.scrollView(dy > 0 ? 3 : -3); rememberPaneView(scrollTouch.pane); scrollTouch.y = touch.clientY; }
+  }
+}, { passive:false });
 document.getElementById('terms').addEventListener('touchend', () => { scrollTouch = null; }, { passive:true });
 document.getElementById('copySel').onclick = copySelection;
 document.getElementById('clearSel').onclick = clearSelection;
@@ -1169,6 +1208,57 @@ for (const key of keyDefs) {
   if (key.mod) { b.dataset.mod = key.mod; b.onclick = () => setMod(key.mod); } else b.onclick = () => sendKey(key.data);
   keys.appendChild(b);
 }
+
+const dockerBar = document.getElementById('dockerBar');
+let dockerBarOpen = false;
+function setDockerBarOpen(open) {
+  dockerBarOpen = !!open;
+  dockerBar.classList.toggle('open', dockerBarOpen);
+  document.getElementById('skydnir').classList.toggle('active', dockerBarOpen);
+}
+function dockerEndpoint() {
+  try { return Android.dockerEndpoint ? Android.dockerEndpoint() : '127.0.0.1:2375'; } catch (_) { return '127.0.0.1:2375'; }
+}
+function renderDockerBar(payload={}) {
+  dockerBar.textContent = '';
+  const endpoint = payload.endpoint || dockerEndpoint();
+  const ep = document.createElement('button');
+  ep.textContent = endpoint;
+  ep.onclick = () => {
+    const next = prompt('Docker API endpoint', endpoint);
+    if (next != null && next.trim()) { try { Android.setDockerEndpoint(next.trim()); } catch (_) {} requestDockerContainers(); }
+  };
+  dockerBar.appendChild(ep);
+  const refresh = document.createElement('button');
+  refresh.textContent = 'Refresh';
+  refresh.onclick = requestDockerContainers;
+  dockerBar.appendChild(refresh);
+  if (payload.error) {
+    const err = document.createElement('button');
+    err.textContent = 'API error';
+    err.title = payload.error;
+    dockerBar.appendChild(err);
+  }
+  const containers = Array.isArray(payload.containers) ? payload.containers : [];
+  if (!containers.length && !payload.error) {
+    const empty = document.createElement('button');
+    empty.textContent = 'No containers';
+    dockerBar.appendChild(empty);
+  }
+  for (const c of containers) {
+    const b = document.createElement('button');
+    b.textContent = c.name || (c.id || '').slice(0, 12) || 'container';
+    b.title = [c.image, c.status].filter(Boolean).join(' | ');
+    b.onclick = () => { setDockerBarOpen(false); Android.connectDockerContainer(active().session, c.id); };
+    dockerBar.appendChild(b);
+  }
+}
+function requestDockerContainers() {
+  setDockerBarOpen(true);
+  renderDockerBar({ endpoint: dockerEndpoint() });
+  try { Android.refreshDockerContainers(); } catch (_) {}
+}
+window.setDockerContainers = payload => { renderDockerBar(payload || {}); setDockerBarOpen(true); };
 const sessions = document.getElementById('sessions');
 function refreshSessions() { for (const [i,b] of [...sessions.children].entries()) b.classList.toggle('active', i === active().session); }
 for (let i=0; i<4; i++) { const b=document.createElement('button'); b.textContent='S'+(i+1); b.onclick=()=>switchPaneSession(activePane, i, true); sessions.appendChild(b); }
@@ -1197,7 +1287,7 @@ document.getElementById('setup').onclick = () => {
   try { Android.copyTermuxSetup(); } catch (_) {}
   try { Android.openTermux(); } catch (_) {}
 };
-document.getElementById('skydnir').onclick = () => { try { Android.connectSkydnir(active().session); } catch (_) {} };
+document.getElementById('skydnir').onclick = () => { if (dockerBarOpen) setDockerBarOpen(false); else requestDockerContainers(); };
 setTimeout(() => {
   const saved = loadLayout();
   if (typeof saved.split === 'boolean') split = saved.split;

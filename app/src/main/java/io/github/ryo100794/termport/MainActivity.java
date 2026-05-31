@@ -31,12 +31,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 public class MainActivity extends Activity {
     private static final String HOST = "127.0.0.1";
     private static final int BASE_PORT = 8765;
-    private static final int SKYDNIR_API_PORT = 2375;
+    private static final String DEFAULT_DOCKER_API_HOST = "127.0.0.1";
+    private static final int DEFAULT_DOCKER_API_PORT = 2375;
+    private static final String PREF_DOCKER_ENDPOINT = "docker_endpoint";
     private static final int MAX_SESSIONS = 4;
     private static final String TERMUX_PACKAGE = "com.termux";
     private static final String RUN_COMMAND_PERMISSION = "com.termux.permission.RUN_COMMAND";
@@ -49,15 +52,19 @@ public class MainActivity extends Activity {
     private final Socket[] sockets = new Socket[MAX_SESSIONS];
     private final OutputStream[] socketOuts = new OutputStream[MAX_SESSIONS];
     private final String[] backends = new String[]{"termux", "termux", "termux", "termux"};
-    private final String[] skydnirExecIds = new String[MAX_SESSIONS];
+    private final String[] dockerExecIds = new String[MAX_SESSIONS];
+    private final String[] dockerContainerIds = new String[MAX_SESSIONS];
     private final int[] rows = new int[]{32, 32, 32, 32};
     private final int[] cols = new int[]{100, 100, 100, 100};
     private WebView webView;
     private String bridgeAssetBase64;
+    private String dockerApiHost = DEFAULT_DOCKER_API_HOST;
+    private int dockerApiPort = DEFAULT_DOCKER_API_PORT;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        loadDockerEndpoint();
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         webView = new WebView(this);
         WebSettings settings = webView.getSettings();
@@ -187,7 +194,8 @@ public class MainActivity extends Activity {
         int s = clampSession(session);
         closeSocket(s);
         backends[s] = "termux";
-        skydnirExecIds[s] = null;
+        dockerExecIds[s] = null;
+        dockerContainerIds[s] = null;
         startTermuxBridge(s);
         setStatus("Session " + (s + 1) + ": connecting " + HOST + ":" + portFor(s));
         io.execute(() -> {
@@ -221,7 +229,8 @@ public class MainActivity extends Activity {
         }
         sockets[s] = null;
         socketOuts[s] = null;
-        skydnirExecIds[s] = null;
+        dockerExecIds[s] = null;
+        dockerContainerIds[s] = null;
     }
 
     private static class EngineResponse {
@@ -240,7 +249,7 @@ public class MainActivity extends Activity {
 
     private String statusPrefix(int session) {
         int s = clampSession(session);
-        return "skydnir".equals(backends[s]) ? "Skydnir " + (s + 1) : "Session " + (s + 1);
+        return "docker".equals(backends[s]) ? "Docker " + (s + 1) : "Session " + (s + 1);
     }
 
     private String encodePath(String value) throws Exception {
@@ -280,15 +289,15 @@ public class MainActivity extends Activity {
         }
     }
 
-    private EngineResponse skydnirRequest(String method, String path, byte[] body, int timeoutMs) throws Exception {
+    private EngineResponse dockerRequest(String method, String path, byte[] body, int timeoutMs) throws Exception {
         try (Socket sock = new Socket()) {
-            sock.connect(new InetSocketAddress(HOST, SKYDNIR_API_PORT), timeoutMs);
+            sock.connect(new InetSocketAddress(dockerApiHost, dockerApiPort), timeoutMs);
             sock.setSoTimeout(timeoutMs);
             OutputStream out = sock.getOutputStream();
             byte[] requestBody = body == null ? new byte[0] : body;
             StringBuilder head = new StringBuilder();
             head.append(method).append(' ').append(path).append(" HTTP/1.1\r\n");
-            head.append("Host: skydnir\r\n");
+            head.append("Host: docker\r\n");
             head.append("Connection: close\r\n");
             if (requestBody.length > 0) {
                 head.append("Content-Type: application/json\r\n");
@@ -304,7 +313,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    private String createSkydnirExec(String containerId) throws Exception {
+    private String createDockerExec(String containerId) throws Exception {
         JSONObject payload = new JSONObject()
                 .put("AttachStdin", true)
                 .put("AttachStdout", true)
@@ -312,7 +321,7 @@ public class MainActivity extends Activity {
                 .put("Tty", true)
                 .put("Env", new JSONArray(Arrays.asList("TERM=xterm-256color", "COLORTERM=truecolor", "ENV=", "BASH_ENV=")))
                 .put("Cmd", new JSONArray(Arrays.asList("/bin/sh", "-lc", "if command -v /bin/bash >/dev/null 2>&1; then exec /bin/bash -i; else exec /bin/sh -i; fi")));
-        EngineResponse response = skydnirRequest("POST", "/containers/" + encodePath(containerId) + "/exec", payload.toString().getBytes(StandardCharsets.UTF_8), 5000);
+        EngineResponse response = dockerRequest("POST", "/containers/" + encodePath(containerId) + "/exec", payload.toString().getBytes(StandardCharsets.UTF_8), 5000);
         if (response.status < 200 || response.status > 299) {
             String detail = response.text();
             throw new Exception(detail.isEmpty() ? "HTTP " + response.status : detail);
@@ -320,14 +329,14 @@ public class MainActivity extends Activity {
         return new JSONObject(response.text()).getString("Id");
     }
 
-    private Socket startSkydnirExecStream(String execId) throws Exception {
+    private Socket startDockerExecStream(String execId) throws Exception {
         JSONObject payload = new JSONObject().put("Detach", false).put("Tty", true);
         byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
         Socket sock = new Socket();
-        sock.connect(new InetSocketAddress(HOST, SKYDNIR_API_PORT), 5000);
+        sock.connect(new InetSocketAddress(dockerApiHost, dockerApiPort), 5000);
         sock.setSoTimeout(5000);
         String head = "POST /exec/" + encodePath(execId) + "/start HTTP/1.1\r\n"
-                + "Host: skydnir\r\n"
+                + "Host: docker\r\n"
                 + "Connection: Upgrade\r\n"
                 + "Upgrade: tcp\r\n"
                 + "Content-Type: application/json\r\n"
@@ -349,26 +358,157 @@ public class MainActivity extends Activity {
         return sock;
     }
 
-    private void connectSkydnir(int session) {
-        int s = clampSession(session);
-        closeSocket(s);
-        backends[s] = "skydnir";
-        skydnirExecIds[s] = null;
-        setStatus("Skydnir " + (s + 1) + ": connecting " + HOST + ":" + SKYDNIR_API_PORT);
-        writeTerminal(s, "\r\n[TermPort] Connecting to Skydnir Engine API " + HOST + ":" + SKYDNIR_API_PORT + "...\r\n");
+
+    private String dockerEndpoint() {
+        return dockerApiHost + ":" + dockerApiPort;
+    }
+
+    private void loadDockerEndpoint() {
+        String saved = getPreferences(MODE_PRIVATE).getString(PREF_DOCKER_ENDPOINT, DEFAULT_DOCKER_API_HOST + ":" + DEFAULT_DOCKER_API_PORT);
+        setDockerEndpointInternal(saved, false);
+    }
+
+    private boolean setDockerEndpointInternal(String endpoint, boolean persist) {
+        String value = endpoint == null ? "" : endpoint.trim();
+        if (value.isEmpty()) value = DEFAULT_DOCKER_API_HOST + ":" + DEFAULT_DOCKER_API_PORT;
+        value = value.replaceFirst("^tcp://", "").replaceFirst("^http://", "");
+        int slash = value.indexOf('/');
+        if (slash >= 0) value = value.substring(0, slash);
+        String host = value;
+        int port = DEFAULT_DOCKER_API_PORT;
+        int colon = value.lastIndexOf(':');
+        if (colon > 0 && colon < value.length() - 1) {
+            host = value.substring(0, colon);
+            try {
+                port = Integer.parseInt(value.substring(colon + 1));
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+        if (host.isEmpty() || port <= 0 || port > 65535) return false;
+        dockerApiHost = host;
+        dockerApiPort = port;
+        if (persist) getPreferences(MODE_PRIVATE).edit().putString(PREF_DOCKER_ENDPOINT, dockerEndpoint()).apply();
+        return true;
+    }
+
+    private String containerDisplayName(JSONObject container) {
+        JSONArray names = container.optJSONArray("Names");
+        String name = names != null && names.length() > 0 ? names.optString(0, "").replaceFirst("^/", "") : "";
+        if (name.isEmpty()) name = container.optString("Id", "");
+        return name.length() > 24 ? name.substring(0, 24) : name;
+    }
+
+    private JSONArray compactContainerList(JSONArray containers) {
+        JSONArray out = new JSONArray();
+        for (int i = 0; i < containers.length(); i++) {
+            JSONObject c = containers.optJSONObject(i);
+            if (c == null) continue;
+            try {
+                out.put(new JSONObject()
+                        .put("id", c.optString("Id"))
+                        .put("name", containerDisplayName(c))
+                        .put("image", c.optString("Image"))
+                        .put("state", c.optString("State"))
+                        .put("status", c.optString("Status")));
+            } catch (JSONException ignored) {
+            }
+        }
+        return out;
+    }
+
+    private JSONArray listDockerContainers() throws Exception {
+        EngineResponse ping = dockerRequest("GET", "/_ping", null, 1500);
+        if (ping.status < 200 || ping.status > 299) throw new Exception("/_ping HTTP " + ping.status);
+        EngineResponse list = dockerRequest("GET", "/containers/json?all=0", null, 4000);
+        if (list.status < 200 || list.status > 299) {
+            String detail = list.text();
+            throw new Exception(detail.isEmpty() ? "/containers/json HTTP " + list.status : detail);
+        }
+        return new JSONArray(list.text());
+    }
+
+    private void publishDockerContainers(JSONArray containers, String error) {
+        try {
+            JSONObject payload = new JSONObject()
+                    .put("endpoint", dockerEndpoint())
+                    .put("containers", containers == null ? new JSONArray() : compactContainerList(containers));
+            if (error != null && !error.isEmpty()) payload.put("error", error);
+            String script = "window.setDockerContainers && window.setDockerContainers(" + payload + ")";
+            runOnUiThread(() -> webView.evaluateJavascript(script, null));
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void refreshDockerContainers() {
+        setStatus("Docker: listing " + dockerEndpoint());
         io.execute(() -> {
             try {
-                EngineResponse ping = skydnirRequest("GET", "/_ping", null, 1500);
+                JSONArray containers = listDockerContainers();
+                publishDockerContainers(containers, null);
+                setStatus("Docker: " + containers.length() + " running containers");
+            } catch (Exception e) {
+                publishDockerContainers(new JSONArray(), e.getMessage());
+                setStatus("Docker: unavailable " + dockerEndpoint());
+            }
+        });
+    }
+
+    private void connectDockerContainer(int session, String containerId) {
+        int s = clampSession(session);
+        String cid = containerId == null ? "" : containerId.trim();
+        if (cid.isEmpty()) return;
+        closeSocket(s);
+        backends[s] = "docker";
+        dockerExecIds[s] = null;
+        dockerContainerIds[s] = cid;
+        setStatus("Docker " + (s + 1) + ": connecting " + dockerEndpoint());
+        writeTerminal(s, "\r\n[TermPort] Docker API exec " + cid + " via " + dockerEndpoint() + "...\r\n");
+        io.execute(() -> {
+            try {
+                String execId = createDockerExec(cid);
+                dockerExecIds[s] = execId;
+                Socket sock = startDockerExecStream(execId);
+                sockets[s] = sock;
+                socketOuts[s] = sock.getOutputStream();
+                sendDockerResizeControl(s, rows[s], cols[s]);
+                setStatus("Docker " + (s + 1) + ": connected");
+                readLoop(s, sock.getInputStream());
+            } catch (Exception e) {
+                setStatus("Docker " + (s + 1) + ": unavailable");
+                writeTerminal(s, "[TermPort] Docker exec failed: " + e.getMessage() + "\r\n");
+            }
+        });
+    }
+
+    private void reconnectDockerSession(int session) {
+        int s = clampSession(session);
+        String cid = dockerContainerIds[s];
+        if (cid != null && !cid.isEmpty()) connectDockerContainer(s, cid);
+        else connectDockerFirstContainer(s);
+    }
+
+    private void connectDockerFirstContainer(int session) {
+        int s = clampSession(session);
+        closeSocket(s);
+        backends[s] = "docker";
+        dockerExecIds[s] = null;
+        dockerContainerIds[s] = null;
+        setStatus("Docker " + (s + 1) + ": connecting " + dockerEndpoint());
+        writeTerminal(s, "\r\n[TermPort] Connecting to Docker Engine API " + dockerEndpoint() + "...\r\n");
+        io.execute(() -> {
+            try {
+                EngineResponse ping = dockerRequest("GET", "/_ping", null, 1500);
                 if (ping.status < 200 || ping.status > 299) throw new Exception("/_ping HTTP " + ping.status);
-                EngineResponse list = skydnirRequest("GET", "/containers/json?all=0", null, 4000);
+                EngineResponse list = dockerRequest("GET", "/containers/json?all=0", null, 4000);
                 if (list.status < 200 || list.status > 299) {
                     String detail = list.text();
                     throw new Exception(detail.isEmpty() ? "/containers/json HTTP " + list.status : detail);
                 }
                 JSONArray containers = new JSONArray(list.text());
                 if (containers.length() == 0) {
-                    setStatus("Skydnir " + (s + 1) + ": no running containers");
-                    writeTerminal(s, "[TermPort] Skydnir API is reachable, but no running containers were found.\r\n");
+                    setStatus("Docker " + (s + 1) + ": no running containers");
+                    writeTerminal(s, "[TermPort] Docker API is reachable, but no running containers were found.\r\n");
                     return;
                 }
                 JSONObject container = containers.getJSONObject(0);
@@ -376,28 +516,29 @@ public class MainActivity extends Activity {
                 JSONArray names = container.optJSONArray("Names");
                 String name = names != null && names.length() > 0 ? names.optString(0, "").replaceFirst("^/", "") : "";
                 if (name.isEmpty()) name = containerId.length() > 12 ? containerId.substring(0, 12) : containerId;
-                String execId = createSkydnirExec(containerId);
-                skydnirExecIds[s] = execId;
-                Socket sock = startSkydnirExecStream(execId);
+                String execId = createDockerExec(containerId);
+                dockerExecIds[s] = execId;
+                dockerContainerIds[s] = containerId;
+                Socket sock = startDockerExecStream(execId);
                 sockets[s] = sock;
                 socketOuts[s] = sock.getOutputStream();
-                setStatus("Skydnir " + (s + 1) + ": connected " + name);
-                writeTerminal(s, "[TermPort] Connected to Skydnir container " + name + "\r\n");
+                setStatus("Docker " + (s + 1) + ": connected " + name);
+                writeTerminal(s, "[TermPort] Connected to Docker container " + name + "\r\n");
                 readLoop(s, sock.getInputStream());
             } catch (Exception e) {
-                setStatus("Skydnir " + (s + 1) + ": unavailable");
-                writeTerminal(s, "[TermPort] Skydnir API unavailable: " + e.getMessage() + "\r\n");
+                setStatus("Docker " + (s + 1) + ": unavailable");
+                writeTerminal(s, "[TermPort] Docker API unavailable: " + e.getMessage() + "\r\n");
             }
         });
     }
 
-    private void sendSkydnirResizeControl(int session, int newRows, int newCols) {
+    private void sendDockerResizeControl(int session, int newRows, int newCols) {
         int s = clampSession(session);
-        String execId = skydnirExecIds[s];
+        String execId = dockerExecIds[s];
         if (execId == null || execId.isEmpty()) return;
         io.execute(() -> {
             try {
-                skydnirRequest("POST", "/exec/" + encodePath(execId) + "/resize?h=" + Math.max(2, newRows) + "&w=" + Math.max(2, newCols), null, 1200);
+                dockerRequest("POST", "/exec/" + encodePath(execId) + "/resize?h=" + Math.max(2, newRows) + "&w=" + Math.max(2, newCols), null, 1200);
             } catch (Exception ignored) {
             }
         });
@@ -427,7 +568,7 @@ public class MainActivity extends Activity {
                     out.flush();
                 } else {
                     writeTerminal(s, "not connected\r\n");
-                    if ("skydnir".equals(backends[s])) connectSkydnir(s); else connectSession(s);
+                    if ("docker".equals(backends[s])) reconnectDockerSession(s); else connectSession(s);
                 }
             } catch (Exception e) {
                 setStatus(statusPrefix(s) + ": disconnected");
@@ -550,12 +691,36 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void connectSkydnir(int session) {
-            MainActivity.this.connectSkydnir(session);
+            MainActivity.this.connectDockerFirstContainer(session);
         }
 
         @JavascriptInterface
         public void openSkydnirTerminal() {
-            MainActivity.this.connectSkydnir(0);
+            MainActivity.this.connectDockerFirstContainer(0);
+        }
+
+        @JavascriptInterface
+        public void refreshDockerContainers() {
+            MainActivity.this.refreshDockerContainers();
+        }
+
+        @JavascriptInterface
+        public void connectDockerContainer(int session, String containerId) {
+            MainActivity.this.connectDockerContainer(session, containerId);
+        }
+
+        @JavascriptInterface
+        public void setDockerEndpoint(String endpoint) {
+            if (setDockerEndpointInternal(endpoint, true)) {
+                setStatus("Docker endpoint " + dockerEndpoint());
+            } else {
+                setStatus("Invalid Docker endpoint");
+            }
+        }
+
+        @JavascriptInterface
+        public String dockerEndpoint() {
+            return MainActivity.this.dockerEndpoint();
         }
 
         @JavascriptInterface
@@ -569,7 +734,7 @@ public class MainActivity extends Activity {
             int s = clampSession(session);
             rows[s] = Math.max(2, newRows);
             cols[s] = Math.max(2, newCols);
-            if ("skydnir".equals(backends[s])) sendSkydnirResizeControl(s, rows[s], cols[s]);
+            if ("docker".equals(backends[s])) sendDockerResizeControl(s, rows[s], cols[s]);
             else sendResizeControl(s, rows[s], cols[s]);
         }
 
