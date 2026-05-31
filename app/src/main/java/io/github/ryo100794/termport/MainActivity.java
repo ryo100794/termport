@@ -191,8 +191,27 @@ public class MainActivity extends Activity {
     }
 
     private void connectSession(int session) {
+        connectSession(session, false);
+    }
+
+    private void reconnectSession(int session) {
+        connectSession(session, true);
+    }
+
+    private boolean isSocketOpen(int session) {
         int s = clampSession(session);
-        if (sockets[s] != null && socketOuts[s] != null && sockets[s].isConnected() && !sockets[s].isClosed()) {
+        Socket sock = sockets[s];
+        return sock != null
+                && socketOuts[s] != null
+                && sock.isConnected()
+                && !sock.isClosed()
+                && !sock.isInputShutdown()
+                && !sock.isOutputShutdown();
+    }
+
+    private void connectSession(int session, boolean forceReconnect) {
+        int s = clampSession(session);
+        if (!forceReconnect && isSocketOpen(s)) {
             setStatus("Session " + (s + 1) + ": connected");
             return;
         }
@@ -209,20 +228,25 @@ public class MainActivity extends Activity {
                 sockets[s] = sock;
                 socketOuts[s] = sock.getOutputStream();
                 setStatus("Session " + (s + 1) + ": connected");
-                readLoop(s, sock.getInputStream());
+                readLoop(s, sock, sock.getInputStream());
             } catch (Exception e) {
                 setStatus("Session " + (s + 1) + ": disconnected");
+                closeSocket(s);
             }
         });
     }
 
-    private void readLoop(int session, InputStream in) throws Exception {
+    private void readLoop(int session, Socket sock, InputStream in) throws Exception {
         byte[] buf = new byte[4096];
         int n;
-        while ((n = in.read(buf)) >= 0) {
-            if (n > 0) writeTerminal(session, buf, n);
+        try {
+            while ((n = in.read(buf)) >= 0) {
+                if (n > 0) writeTerminal(session, buf, n);
+            }
+        } finally {
+            closeSocketIfCurrent(session, sock);
+            setStatus(statusPrefix(session) + ": disconnected");
         }
-        setStatus(statusPrefix(session) + ": disconnected");
     }
 
     private void closeSocket(int session) {
@@ -235,6 +259,12 @@ public class MainActivity extends Activity {
         socketOuts[s] = null;
         dockerExecIds[s] = null;
         dockerContainerIds[s] = null;
+    }
+
+    private void closeSocketIfCurrent(int session, Socket sock) {
+        int s = clampSession(session);
+        if (sockets[s] != sock) return;
+        closeSocket(s);
     }
 
     private static class EngineResponse {
@@ -483,7 +513,7 @@ public class MainActivity extends Activity {
                 socketOuts[s] = sock.getOutputStream();
                 sendDockerResizeControl(s, rows[s], cols[s]);
                 setStatus("Docker " + (s + 1) + ": connected");
-                readLoop(s, sock.getInputStream());
+                readLoop(s, sock, sock.getInputStream());
             } catch (Exception e) {
                 setStatus("Docker " + (s + 1) + ": unavailable");
                 writeTerminal(s, "[TermPort] Docker exec failed: " + e.getMessage() + "\r\n");
@@ -534,7 +564,7 @@ public class MainActivity extends Activity {
                 socketOuts[s] = sock.getOutputStream();
                 setStatus("Docker " + (s + 1) + ": connected " + name);
                 writeTerminal(s, "[TermPort] Connected to Docker container " + name + "\r\n");
-                readLoop(s, sock.getInputStream());
+                readLoop(s, sock, sock.getInputStream());
             } catch (Exception e) {
                 setStatus("Docker " + (s + 1) + ": unavailable");
                 writeTerminal(s, "[TermPort] Docker API unavailable: " + e.getMessage() + "\r\n");

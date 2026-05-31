@@ -86,6 +86,7 @@ const storageKey = 'termPortLayoutV3';
 const scrollbackStoragePrefix = 'imeConsoleScrollbackV1:';
 const sessionViewStates = {};
 let viewStateSaveTimer = null;
+const sessionResizeState = Array.from({ length:SESSION_COUNT }, () => ({ rows:-1, cols:-1 }));
 function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split, activePane, fontSize, rendererMode, sessions: panes.map(p => p.session), viewStates: sessionViewStates })); } catch (_) {} }
 function loadLayout() { try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (_) { return {}; } }
 let rendererMode = loadLayout().rendererMode === 'buffer' ? 'buffer' : 'safe';
@@ -943,13 +944,33 @@ function prepareTerminalInput(refocus=false) {
   return true;
 }
 function sendText(text) { if (!text || !prepareTerminalInput(false)) return; clearActiveSelection(); Android.writeBase64(active().session, toB64(enc.encode(text))); }
+function paneGeometry(index) {
+  const p = panes[normalizePaneIndex(index)];
+  return { rows:Math.max(2, p.term.rows), cols:Math.max(2, p.term.cols) };
+}
+function sendResizeForSession(session, rows, cols, force=false) {
+  const s = normalizeSessionId(session);
+  const state = sessionResizeState[s];
+  rows = Math.max(2, rows); cols = Math.max(2, cols);
+  if (!force && state.rows === rows && state.cols === cols) return;
+  state.rows = rows; state.cols = cols;
+  Android.resize(s, rows, cols);
+}
 function sendResize(index) {
   if (!isPaneVisible(index)) return;
   const p = panes[index];
-  const rows = Math.max(2, p.term.rows), cols = Math.max(2, p.term.cols);
-  if (p.lastRows === rows && p.lastCols === cols) return;
-  p.lastRows = rows; p.lastCols = cols;
-  Android.resize(p.session, rows, cols);
+  const g = paneGeometry(index);
+  const force = p.lastRows !== g.rows || p.lastCols !== g.cols;
+  p.lastRows = g.rows; p.lastCols = g.cols;
+  sendResizeForSession(p.session, g.rows, g.cols, force);
+}
+function broadcastHiddenSessionResize() {
+  const ref = paneGeometry(activePane);
+  const visibleSessions = new Set();
+  panes.forEach((p, i) => { if (isPaneVisible(i)) visibleSessions.add(normalizeSessionId(p.session)); });
+  for (let s=0; s<SESSION_COUNT; s++) {
+    if (!visibleSessions.has(s)) sendResizeForSession(s, ref.rows, ref.cols);
+  }
 }
 function fitAll(reason='layout') {
   applyViewportHeight();
@@ -960,6 +981,7 @@ function fitAll(reason='layout') {
     p.term.refresh();
     sendResize(i);
   });
+  broadcastHiddenSessionResize();
 }
 function setFontSize(value) { fontSize = clampFontSize(value); relayout('font'); saveLayout(); }
 function isTerminalInputFocused() {
@@ -1025,6 +1047,7 @@ function resetPaneForSession(paneIndex, session) {
   p.writeScheduled = false;
   p.lastRows = -1;
   p.lastCols = -1;
+  sessionResizeState[normalizeSessionId(session)] = { rows:-1, cols:-1 };
   p.session = session;
   p.decoder = new TextDecoder('utf-8');
   if (p.term.setPersistKey) p.term.setPersistKey('session-' + session);
