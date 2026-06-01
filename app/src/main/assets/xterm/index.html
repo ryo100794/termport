@@ -983,6 +983,7 @@ function sendResize(index) {
   const force = p.lastRows !== g.rows || p.lastCols !== g.cols;
   p.lastRows = g.rows; p.lastCols = g.cols;
   sendResizeForSession(p.session, g.rows, g.cols, force);
+  if (index === activePane) setStatus(`S${p.session + 1} ${g.rows}x${g.cols} font ${fontSize.toFixed(1)}`);
 }
 function broadcastHiddenSessionResize() {
   const ref = paneGeometry(activePane);

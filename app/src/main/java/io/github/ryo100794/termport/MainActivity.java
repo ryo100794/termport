@@ -576,10 +576,22 @@ public class MainActivity extends Activity {
         int s = clampSession(session);
         String execId = dockerExecIds[s];
         if (execId == null || execId.isEmpty()) return;
+        int targetRows = Math.max(2, newRows);
+        int targetCols = Math.max(2, newCols);
         io.execute(() -> {
-            try {
-                dockerRequest("POST", "/exec/" + encodePath(execId) + "/resize?h=" + Math.max(2, newRows) + "&w=" + Math.max(2, newCols), null, 1200);
-            } catch (Exception ignored) {
+            for (int attempt = 0; attempt < 6; attempt++) {
+                try {
+                    String path = "/exec/" + encodePath(execId) + "/resize?h=" + targetRows + "&w=" + targetCols;
+                    dockerRequest("POST", path, null, 1200);
+                    return;
+                } catch (Exception ignored) {
+                    try {
+                        Thread.sleep(120L * (attempt + 1));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
             }
         });
     }
