@@ -586,14 +586,25 @@ public class MainActivity extends Activity {
 
     private void sendResizeControl(int session, int newRows, int newCols) {
         int s = clampSession(session);
+        int targetRows = Math.max(2, newRows);
+        int targetCols = Math.max(2, newCols);
         io.execute(() -> {
-            try (Socket ctrl = new Socket()) {
-                ctrl.connect(new InetSocketAddress(HOST, portFor(s) + 1000), 500);
-                OutputStream out = ctrl.getOutputStream();
-                String command = "RESIZE " + Math.max(2, newRows) + " " + Math.max(2, newCols) + "\n";
-                out.write(command.getBytes(StandardCharsets.US_ASCII));
-                out.flush();
-            } catch (Exception ignored) {
+            String command = "RESIZE " + targetRows + " " + targetCols + "\n";
+            for (int attempt = 0; attempt < 6; attempt++) {
+                try (Socket ctrl = new Socket()) {
+                    ctrl.connect(new InetSocketAddress(HOST, portFor(s) + 1000), 500);
+                    OutputStream out = ctrl.getOutputStream();
+                    out.write(command.getBytes(StandardCharsets.US_ASCII));
+                    out.flush();
+                    return;
+                } catch (Exception ignored) {
+                    try {
+                        Thread.sleep(120L * (attempt + 1));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
             }
         });
     }
