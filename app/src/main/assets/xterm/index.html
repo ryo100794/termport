@@ -723,7 +723,22 @@ class XtermCompat {
   emitData(data) { for (const cb of this.dataHandlers) cb(data); }
   fit() {
     this.term.options.fontSize = this.options.fontSize;
-    this.fitAddon.fit();
+    const hostRect = this.host.getBoundingClientRect();
+    const width = Math.max(1, this.host.clientWidth || hostRect.width);
+    const height = Math.max(1, this.host.clientHeight || hostRect.height);
+    let cell = null;
+    try { cell = this.term._core && this.term._core._renderService && this.term._core._renderService.dimensions.css.cell; } catch (_) {}
+    if (!cell || !cell.width || !cell.height) {
+      this.fitAddon.fit();
+      try { cell = this.term._core._renderService.dimensions.css.cell; } catch (_) {}
+    }
+    if (cell && cell.width > 0 && cell.height > 0) {
+      const cols = Math.max(2, Math.floor(width / cell.width));
+      const rows = Math.max(1, Math.floor(height / cell.height));
+      if (this.term.cols !== cols || this.term.rows !== rows) this.term.resize(cols, rows);
+    } else {
+      this.fitAddon.fit();
+    }
     this.refresh();
   }
   focus() { this.term.focus(); }
