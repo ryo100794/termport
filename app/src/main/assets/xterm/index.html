@@ -1062,7 +1062,7 @@ function resetPaneForSession(paneIndex, session) {
 }
 function switchPaneSession(paneIndex, session, connect=true) {
   paneIndex = normalizePaneIndex(paneIndex);
-  const target = Math.max(0, Math.min(3, Number(session) || 0));
+  const target = Math.max(0, Math.min(SESSION_COUNT - 1, Number(session) || 0));
   resetPaneForSession(paneIndex, target);
   if (connect) Android.connectSession(target);
   setActivePane(paneIndex);
@@ -1399,7 +1399,7 @@ setTimeout(() => {
   applySplitState(split, false);
   if (Array.isArray(saved.sessions)) {
     for (let i=0; i<Math.min(saved.sessions.length, panes.length); i++) {
-      const target = Math.max(0, Math.min(3, Number(saved.sessions[i]) || 0));
+      const target = Math.max(0, Math.min(SESSION_COUNT - 1, Number(saved.sessions[i]) || 0));
       resetPaneForSession(i, target);
     }
   }
