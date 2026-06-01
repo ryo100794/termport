@@ -22,7 +22,11 @@
   .term .xterm { width:100%; height:100%; padding:0; }
   .term .xterm-viewport { overflow:hidden !important; }
   .term textarea { position:absolute; left:0; top:0; width:100%; height:100%; opacity:.01; border:0; padding:0; resize:none; color:transparent; background:transparent; caret-color:transparent; outline:0; z-index:1; }
-  body.single #pane1 { display:none; }
+  body.single .pane:not(#pane0), body.split2 #pane2, body.split2 #pane3 { display:none; }
+  body.split4 #terms { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-rows:minmax(0,1fr) minmax(0,1fr); }
+  body.split4 .pane { border-top:1px solid #293039; border-left:1px solid #293039; }
+  body.split4 #pane0, body.split4 #pane1 { border-top:0; }
+  body.split4 #pane0, body.split4 #pane2 { border-left:0; }
   button { flex:0 0 auto; min-width:32px; height:28px; padding:0 6px; border:1px solid #3a3a3a; border-radius:5px; background:#23272d; color:#eee; font:10.5px system-ui,sans-serif; white-space:nowrap; }
   button.active { background:#0e5f9d; border-color:#58a6ff; }
   button:active { background:#444; }
@@ -40,6 +44,8 @@
   <div id="terms">
     <div class="pane active" id="pane0"><div class="paneTitle">S1</div><div class="term" id="term0"></div></div>
     <div class="pane" id="pane1"><div class="paneTitle">S2</div><div class="term" id="term1"></div></div>
+    <div class="pane" id="pane2"><div class="paneTitle">S3</div><div class="term" id="term2"></div></div>
+    <div class="pane" id="pane3"><div class="paneTitle">S4</div><div class="term" id="term3"></div></div>
   </div>
   <div id="keys"></div>
 <script src="xterm.js"></script>
@@ -78,6 +84,7 @@ const TERMINAL_LINE_HEIGHT = 1.2;
 let fontSize = DEFAULT_FONT_SIZE;
 let activePane = 0;
 let split = false;
+let splitCount = 1;
 let selecting = false;
 let selectionInputBlockUntil = 0;
 let imeSuppressText = '';
@@ -87,7 +94,7 @@ const scrollbackStoragePrefix = 'imeConsoleScrollbackV1:';
 const sessionViewStates = {};
 let viewStateSaveTimer = null;
 const sessionResizeState = Array.from({ length:SESSION_COUNT }, () => ({ rows:-1, cols:-1 }));
-function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split, activePane, fontSize, rendererMode, sessions: panes.map(p => p.session), viewStates: sessionViewStates })); } catch (_) {} }
+function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split:splitCount > 1, splitCount, activePane, fontSize, rendererMode, sessions: panes.map(p => p.session), viewStates: sessionViewStates })); } catch (_) {} }
 function loadLayout() { try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (_) { return {}; } }
 let rendererMode = loadLayout().rendererMode === 'buffer' ? 'buffer' : 'safe';
 function clampFontSize(value) { return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(value * 10) / 10)); }
@@ -853,7 +860,7 @@ function makePane(index) {
   if (term.setPersistKey) term.setPersistKey('session-' + index);
   return { term, session: index, decoder: new TextDecoder('utf-8') };
 }
-const panes = [makePane(0), makePane(1)];
+const panes = [makePane(0), makePane(1), makePane(2), makePane(3)];
 const sessionDecoders = Array.from({ length:SESSION_COUNT }, () => new TextDecoder('utf-8'));
 const hiddenSessionBacklog = Array.from({ length:SESSION_COUNT }, () => '');
 const sessionReplayText = Array.from({ length:SESSION_COUNT }, () => '');
@@ -888,8 +895,9 @@ function queueWrite(p, text) {
     if (chunk) p.term.write(chunk);
   });
 }
-function isPaneVisible(index) { return split || index === 0; }
-function normalizePaneIndex(index) { return isPaneVisible(index) ? index : 0; }
+function visiblePaneCount() { return Math.max(1, Math.min(panes.length, Number(splitCount) || 1)); }
+function isPaneVisible(index) { return index >= 0 && index < visiblePaneCount(); }
+function normalizePaneIndex(index) { index = Math.max(0, Math.min(panes.length - 1, Number(index) || 0)); return isPaneVisible(index) ? index : 0; }
 function active() { activePane = normalizePaneIndex(activePane); return panes[activePane]; }
 function paneViewSnapshot(index) {
   const p = panes[index];
@@ -1018,8 +1026,7 @@ function setActivePane(index) {
   index = normalizePaneIndex(index);
   if (index !== activePane) { rememberPaneView(activePane); exitSelectionMode(false); }
   activePane = index;
-  document.getElementById('pane0').classList.toggle('active', index === 0);
-  document.getElementById('pane1').classList.toggle('active', index === 1);
+  panes.forEach((_, i) => document.getElementById('pane' + i).classList.toggle('active', i === index));
   try { panes[index].term.clearSelection(); } catch (_) {}
   panes[index].term.focus();
   refreshSessions();
@@ -1159,7 +1166,7 @@ function switchSessionBySwipe(paneIndex, direction) {
   lastSessionSwipeAt = now;
   paneIndex = normalizePaneIndex(paneIndex);
   const current = panes[paneIndex].session;
-  const next = (current + direction + 4) % 4;
+  const next = (current + direction + SESSION_COUNT) % SESSION_COUNT;
   if (next !== current) switchPaneSession(paneIndex, next, true);
 }
 function scrollLinesForDelta(term, dy) {
@@ -1258,7 +1265,8 @@ for (let i=0; i<panes.length; i++) {
 }
 function paneIndexFromTarget(target) {
   const pane = target && target.closest ? target.closest('.pane') : null;
-  return normalizePaneIndex(pane && pane.id === 'pane1' ? 1 : 0);
+  const match = pane && /^pane(\d+)$/.exec(pane.id || '');
+  return normalizePaneIndex(match ? Number(match[1]) : 0);
 }
 let scrollTouch = null;
 document.getElementById('terms').addEventListener('touchstart', ev => {
@@ -1367,21 +1375,27 @@ refreshSessions();
 function refreshModeButton() { const b = document.getElementById('mode'); b.textContent = rendererMode === 'safe' ? 'Xterm' : 'Buffer'; b.classList.toggle('active', rendererMode === 'buffer'); }
 document.getElementById('mode').onclick = () => { rendererMode = rendererMode === 'safe' ? 'buffer' : 'safe'; saveLayout(); location.reload(); };
 refreshModeButton();
-function applySplitState(enabled, persist=true) {
+function refreshSplitButton() {
+  const b = document.getElementById('split');
+  b.textContent = splitCount === 4 ? 'Split 4' : splitCount === 2 ? 'Split 2' : 'Split 1';
+  b.classList.toggle('active', splitCount > 1);
+}
+function applySplitState(countOrEnabled, persist=true) {
   rememberVisiblePaneViews();
-  split = !!enabled;
-  document.body.classList.toggle('single', !split);
-  document.getElementById('split').classList.toggle('active', split);
-  if (!split) setActivePane(0);
-  else {
-    document.getElementById('pane0').classList.toggle('active', activePane === 0);
-    document.getElementById('pane1').classList.toggle('active', activePane === 1);
-    refreshSessions();
-  }
+  splitCount = countOrEnabled === true ? 2 : countOrEnabled === false ? 1 : Number(countOrEnabled) || 1;
+  if (![1, 2, 4].includes(splitCount)) splitCount = splitCount > 2 ? 4 : splitCount > 1 ? 2 : 1;
+  split = splitCount > 1;
+  document.body.classList.toggle('single', splitCount === 1);
+  document.body.classList.toggle('split2', splitCount === 2);
+  document.body.classList.toggle('split4', splitCount === 4);
+  refreshSplitButton();
+  if (!isPaneVisible(activePane)) setActivePane(0);
+  else { panes.forEach((_, i) => document.getElementById('pane' + i).classList.toggle('active', activePane === i)); refreshSessions(); }
   if (persist) saveLayout();
   relayout('split');
 }
-document.getElementById('split').onclick = () => applySplitState(!split, true);
+function nextSplitCount() { return splitCount === 1 ? 2 : splitCount === 2 ? 4 : 1; }
+document.getElementById('split').onclick = () => applySplitState(nextSplitCount(), true);
 document.getElementById('redraw').onclick = () => { try { active().term.refresh(); } catch (_) {} relayout('redraw'); };
 document.getElementById('connect').onclick = () => Android.connectSession(active().session);
 document.getElementById('setup').onclick = () => {
@@ -1391,19 +1405,21 @@ document.getElementById('setup').onclick = () => {
 document.getElementById('skydnir').onclick = () => { if (dockerBarOpen) setDockerBarOpen(false); else requestDockerContainers(); };
 setTimeout(() => {
   const saved = loadLayout();
-  if (typeof saved.split === 'boolean') split = saved.split;
+  if (typeof saved.splitCount === 'number') splitCount = saved.splitCount;
+  else if (typeof saved.split === 'boolean') splitCount = saved.split ? 2 : 1;
+  split = splitCount > 1;
   if (saved.rendererMode === 'safe' || saved.rendererMode === 'buffer') rendererMode = saved.rendererMode;
   refreshModeButton();
   if (typeof saved.fontSize === 'number') fontSize = clampFontSize(saved.fontSize);
   if (saved.viewStates && typeof saved.viewStates === 'object') Object.assign(sessionViewStates, saved.viewStates);
-  applySplitState(split, false);
+  applySplitState(splitCount, false);
   if (Array.isArray(saved.sessions)) {
     for (let i=0; i<Math.min(saved.sessions.length, panes.length); i++) {
       const target = Math.max(0, Math.min(SESSION_COUNT - 1, Number(saved.sessions[i]) || 0));
       resetPaneForSession(i, target);
     }
   }
-  const pane = split ? Math.max(0, Math.min(1, Number(saved.activePane) || 0)) : 0;
+  const pane = Math.max(0, Math.min(visiblePaneCount() - 1, Number(saved.activePane) || 0));
   relayout('init');
   for (const p of panes) Android.connectSession(p.session);
   setActivePane(pane);
