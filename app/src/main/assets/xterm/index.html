@@ -12,12 +12,12 @@
   #sessions, #dockerBar { display:flex; gap:4px; overflow-x:auto; padding:5px 6px; background:#111418; scrollbar-width:none; }
   #keys { display:grid; grid-auto-flow:column; grid-template-rows:repeat(2,28px); grid-auto-columns:max-content; gap:3px; overflow-x:auto; padding:4px 6px; background:#111418; scrollbar-width:none; }
   #sessions::-webkit-scrollbar, #dockerBar::-webkit-scrollbar, #keys::-webkit-scrollbar { display:none; }
-  #terms { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; background:#050505; }
-  .pane { flex:1 1 0; min-height:0; display:flex; flex-direction:column; border-top:1px solid #293039; }
+  #terms { flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; background:#050505; overflow:hidden; }
+  .pane { flex:1 1 0; min-width:0; min-height:0; overflow:hidden; display:flex; flex-direction:column; border-top:1px solid #293039; box-sizing:border-box; }
   .pane:first-child { border-top:0; }
   .pane.active .paneTitle { background:#0e5f9d; }
   .paneTitle { flex:0 0 auto; height:3px; padding:0; overflow:hidden; background:#15181c; color:transparent; font-size:0; line-height:0; }
-  .term { flex:1 1 auto; min-height:0; overflow:hidden; background:#050505; touch-action:none; position:relative; }
+  .term { flex:1 1 auto; min-width:0; min-height:0; width:100%; height:100%; overflow:hidden; background:#050505; touch-action:none; position:relative; box-sizing:border-box; }
   .term canvas { display:block; background:#050505; }
   .term .xterm { width:100%; height:100%; padding:0; }
   .term .xterm-viewport { overflow:hidden !important; }
@@ -54,7 +54,7 @@
 const enc = new TextEncoder();
 const statusEl = document.getElementById('status');
 const DEFAULT_FONT_SIZE = 13;
-const MIN_FONT_SIZE = 6;
+const MIN_FONT_SIZE = 4;
 const MAX_FONT_SIZE = 28;
 const DEFAULT_ROWS = 24;
 const DEFAULT_COLS = 80;
@@ -289,7 +289,7 @@ class VirtualTerm {
     this.charH = height / rows;
     this.resize(cols, rows);
   }
-  font() { return `px `; }
+  font() { return `${this.options.fontSize}px ${TERMINAL_FONT_FAMILY}`; }
   resize(cols, rows) {
     cols = Math.max(8, Math.floor(cols)); rows = Math.max(4, Math.floor(rows));
     const oldRows = this.rows;
@@ -1123,9 +1123,35 @@ function installDirectImeFlush(term, paneIndex) {
 
 let pinchState = null;
 function touchDistance(a, b) { return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); }
-document.getElementById('terms').addEventListener('touchstart', ev => { if (ev.touches.length === 2) { pinchState = { distance: touchDistance(ev.touches[0], ev.touches[1]), fontSize }; ev.preventDefault(); } }, { passive:false });
-document.getElementById('terms').addEventListener('touchmove', ev => { if (pinchState && ev.touches.length === 2) { setFontSize(pinchState.fontSize * touchDistance(ev.touches[0], ev.touches[1]) / Math.max(1, pinchState.distance)); ev.preventDefault(); } }, { passive:false });
-document.getElementById('terms').addEventListener('touchend', ev => { if (ev.touches.length < 2) pinchState = null; }, { passive:true });
+function pinchInTerms(ev) {
+  const terms = document.getElementById('terms');
+  const target = ev.target && ev.target.closest ? ev.target.closest('#terms') : null;
+  if (target === terms) return true;
+  if (ev.touches && ev.touches.length) {
+    for (const t of ev.touches) {
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      if (el && terms.contains(el)) return true;
+    }
+  }
+  return false;
+}
+function handlePinchStart(ev) {
+  if (ev.touches.length !== 2 || !pinchInTerms(ev)) return;
+  pinchState = { distance: touchDistance(ev.touches[0], ev.touches[1]), fontSize };
+  ev.preventDefault();
+}
+function handlePinchMove(ev) {
+  if (!pinchState || ev.touches.length !== 2) return;
+  const scale = touchDistance(ev.touches[0], ev.touches[1]) / Math.max(1, pinchState.distance);
+  setFontSize(pinchState.fontSize * scale);
+  setStatus('Font ' + fontSize.toFixed(1));
+  ev.preventDefault();
+}
+function handlePinchEnd(ev) { if (ev.touches.length < 2) pinchState = null; }
+document.addEventListener('touchstart', handlePinchStart, { passive:false, capture:true });
+document.addEventListener('touchmove', handlePinchMove, { passive:false, capture:true });
+document.addEventListener('touchend', handlePinchEnd, { passive:true, capture:true });
+document.addEventListener('touchcancel', handlePinchEnd, { passive:true, capture:true });
 window.addEventListener('resize', scheduleWindowFit);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', scheduleWindowFit);
@@ -1393,6 +1419,8 @@ function applySplitState(countOrEnabled, persist=true) {
   else { panes.forEach((_, i) => document.getElementById('pane' + i).classList.toggle('active', activePane === i)); refreshSessions(); }
   if (persist) saveLayout();
   relayout('split');
+  requestAnimationFrame(() => relayout('split-frame'));
+  setTimeout(() => relayout('split-settled'), RESIZE_SLOW_DELAY_MS);
 }
 function nextSplitCount() { return splitCount === 1 ? 2 : splitCount === 2 ? 4 : 1; }
 document.getElementById('split').onclick = () => applySplitState(nextSplitCount(), true);
