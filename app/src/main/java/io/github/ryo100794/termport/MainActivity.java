@@ -311,6 +311,7 @@ public class MainActivity extends Activity {
                 if (generation != connectGenerations[s]) return;
                 try {
                     Socket sock = new Socket();
+                    sock.setTcpNoDelay(true);
                     sock.connect(new InetSocketAddress(HOST, portFor(s)), 900);
                     if (generation != connectGenerations[s]) {
                         try { sock.close(); } catch (Exception ignored) {}
@@ -429,6 +430,7 @@ public class MainActivity extends Activity {
 
     private EngineResponse dockerRequest(String method, String path, byte[] body, int timeoutMs) throws Exception {
         try (Socket sock = new Socket()) {
+            sock.setTcpNoDelay(true);
             sock.connect(new InetSocketAddress(dockerApiHost, dockerApiPort), timeoutMs);
             sock.setSoTimeout(timeoutMs);
             OutputStream out = sock.getOutputStream();
@@ -471,6 +473,7 @@ public class MainActivity extends Activity {
         JSONObject payload = new JSONObject().put("Detach", false).put("Tty", true);
         byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
         Socket sock = new Socket();
+        sock.setTcpNoDelay(true);
         sock.connect(new InetSocketAddress(dockerApiHost, dockerApiPort), 5000);
         sock.setSoTimeout(5000);
         String head = "POST /exec/" + encodePath(execId) + "/start HTTP/1.1\r\n"

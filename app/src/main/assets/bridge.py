@@ -65,7 +65,7 @@ class Session:
         self.ctrl_port = self.port + 1000
         self.rows = ROWS[index]
         self.cols = COLS[index]
-        self.client = None
+        self.clients = []
         self.replay_buffer = deque()
         self.replay_size = 0
         self.shell_pid, self.pty_fd = self.spawn_shell()
@@ -88,13 +88,17 @@ class Session:
         os.set_blocking(fd, False)
         return pid, fd
 
-    def close_client(self):
-        if self.client:
+    def close_client(self, conn=None):
+        targets = list(self.clients) if conn is None else [conn]
+        for c in targets:
             try:
-                self.client.close()
+                c.close()
             except Exception:
                 pass
-        self.client = None
+            try:
+                self.clients.remove(c)
+            except ValueError:
+                pass
 
     def remember_output(self, data):
         if not data or REPLAY_LIMIT <= 0:
@@ -111,16 +115,24 @@ class Session:
             for chunk in self.replay_buffer:
                 conn.sendall(chunk)
         except Exception:
-            self.close_client()
+            self.close_client(conn)
 
     def accept_client(self):
         new_client, _ = self.srv.accept()
+        try:
+            new_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except Exception:
+            pass
         new_client.setblocking(False)
-        self.close_client()
-        self.client = new_client
-        self.replay_to(self.client)
-        self.replay_buffer.clear()
-        self.replay_size = 0
+        self.clients.append(new_client)
+        self.replay_to(new_client)
+
+    def broadcast_output(self, data):
+        for conn in list(self.clients):
+            try:
+                conn.sendall(data)
+            except Exception:
+                self.close_client(conn)
 
     def handle_control(self):
         conn, _ = self.ctrl_srv.accept()
@@ -151,26 +163,18 @@ class Session:
             return False
         if not data:
             return False
-        if self.client:
-            try:
-                self.client.sendall(data)
-            except Exception:
-                self.close_client()
-                self.remember_output(data)
-        else:
-            self.remember_output(data)
+        self.remember_output(data)
+        self.broadcast_output(data)
         return True
 
-    def read_client(self):
-        if not self.client:
-            return True
+    def read_client(self, conn):
         try:
-            data = self.client.recv(4096)
+            data = conn.recv(4096)
         except Exception:
-            self.close_client()
+            self.close_client(conn)
             return True
         if not data:
-            self.close_client()
+            self.close_client(conn)
             return True
         try:
             os.write(self.pty_fd, data)
@@ -186,8 +190,7 @@ def main():
         readers = []
         for s in sessions:
             readers.extend([s.srv, s.ctrl_srv, s.pty_fd])
-            if s.client:
-                readers.append(s.client)
+            readers.extend(s.clients)
         ready, _, _ = select.select(readers, [], [], 0.5)
         for item in ready:
             for s in sessions:
@@ -201,8 +204,8 @@ def main():
                     if not s.read_pty():
                         return
                     break
-                if item is s.client:
-                    if not s.read_client():
+                if item in s.clients:
+                    if not s.read_client(item):
                         return
                     break
 
