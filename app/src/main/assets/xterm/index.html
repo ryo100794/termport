@@ -113,9 +113,20 @@ function blankCell(attr) { return { ch:' ', attr: cloneAttr(attr || VirtualTerm.
 function charWidth(ch) {
   const cp = ch.codePointAt(0) || 0;
   if (cp === 0) return 0;
-  if (cp < 0x1100) return 1;
-  return 2;
+  if (cp < 0x1100 || (cp >= 0x2500 && cp <= 0x259f)) return 1;
+  if ((cp >= 0x1100 && cp <= 0x115f) || cp === 0x2329 || cp === 0x232a
+      || (cp >= 0x2e80 && cp <= 0xa4cf) || (cp >= 0xac00 && cp <= 0xd7a3)
+      || (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0xfe10 && cp <= 0xfe19)
+      || (cp >= 0xfe30 && cp <= 0xfe6f) || (cp >= 0xff00 && cp <= 0xff60)
+      || (cp >= 0xffe0 && cp <= 0xffe6)) return 2;
+  return 1;
 }
+const DEC_SPECIAL_GRAPHICS = {
+  '`':'◆', 'a':'▒', 'b':'␉', 'c':'␌', 'd':'␍', 'e':'␊', 'f':'°', 'g':'±', 'h':'␤', 'i':'␋',
+  'j':'┘', 'k':'┐', 'l':'┌', 'm':'└', 'n':'┼', 'o':'⎺', 'p':'⎻', 'q':'─', 'r':'⎼', 's':'⎽',
+  't':'├', 'u':'┤', 'v':'┴', 'w':'┬', 'x':'│', 'y':'≤', 'z':'≥', '{':'π', '|':'≠', '}':'£', '~':'·'
+};
+function mapCharsetChar(ch, charset) { return charset === '0' ? (DEC_SPECIAL_GRAPHICS[ch] || ch) : ch; }
 class VirtualTerm {
   static defaultAttr = { fg:palette.defaultFg, bg:palette.defaultBg, bold:false, inverse:false, dim:false, italic:false, underline:false, hidden:false };
   constructor(host, opts={}) {
@@ -136,7 +147,7 @@ class VirtualTerm {
     this.normalScreen = null;
     this.altScreen = null;
     this.isAltScreen = false;
-    this.state = 'normal'; this.esc = ''; this.csi = ''; this.oscEsc = false; this.stringEsc = false;
+    this.state = 'normal'; this.esc = ''; this.csi = ''; this.oscEsc = false; this.stringEsc = false; this.charsetTarget = 'G0'; this.g0Charset = 'B'; this.g1Charset = 'B'; this.activeCharsetSlot = 'G0'; this.activeCharset = 'B';
     this.pendingRender = false; this.dataHandlers = [];
     this.selection = null;
     this.compositionPreview = '';
@@ -186,7 +197,7 @@ class VirtualTerm {
     this.cursorVisible = true;
     this.lastChar = ' ';
     this.scrollTop = 0; this.scrollBottom = this.rows - 1;
-    this.attr = cloneAttr(VirtualTerm.defaultAttr);
+    this.attr = cloneAttr(VirtualTerm.defaultAttr); this.g0Charset = 'B'; this.g1Charset = 'B'; this.activeCharsetSlot = 'G0'; this.activeCharset = 'B';
     this.initLines();
     this.restorePersisted();
     this.requestRender();
@@ -236,7 +247,7 @@ class VirtualTerm {
     } catch (_) {}
   }
   cloneLines(lines=this.lines) { return lines.map(line => line.map(cell => ({ ch:cell.ch, cont:cell.cont, attr:cloneAttr(cell.attr) }))); }
-  saveScreen() { return { lines:this.cloneLines(), x:this.x, y:this.y, scrollTop:this.scrollTop, scrollBottom:this.scrollBottom, autoWrap:this.autoWrap, insertMode:this.insertMode, originMode:this.originMode, cursorVisible:this.cursorVisible, attr:cloneAttr(this.attr), saved:{x:this.saved.x, y:this.saved.y} }; }
+  saveScreen() { return { lines:this.cloneLines(), x:this.x, y:this.y, scrollTop:this.scrollTop, scrollBottom:this.scrollBottom, autoWrap:this.autoWrap, insertMode:this.insertMode, originMode:this.originMode, cursorVisible:this.cursorVisible, attr:cloneAttr(this.attr), saved:{x:this.saved.x, y:this.saved.y}, g0Charset:this.g0Charset, g1Charset:this.g1Charset, activeCharsetSlot:this.activeCharsetSlot, activeCharset:this.activeCharset }; }
   restoreScreen(screen) {
     if (!screen) return false;
     this.lines = this.cloneLines(screen.lines);
@@ -254,6 +265,10 @@ class VirtualTerm {
     this.scrollBottom = Math.max(this.scrollTop, Math.min(this.rows - 1, screen.scrollBottom ?? (this.rows - 1)));
     this.attr = cloneAttr(screen.attr || VirtualTerm.defaultAttr);
     this.saved = screen.saved || {x:0, y:0};
+    this.g0Charset = screen.g0Charset || 'B';
+    this.g1Charset = screen.g1Charset || 'B';
+    this.activeCharsetSlot = screen.activeCharsetSlot || 'G0';
+    this.activeCharset = this.activeCharsetSlot === 'G1' ? this.g1Charset : this.g0Charset;
     return true;
   }
   setAltScreen(enabled, clear=true) {
@@ -342,9 +357,9 @@ class VirtualTerm {
   setCompositionPreview(text) { this.compositionPreview = text || ''; this.requestRender(); }
   clearTextureAtlas() {}
   refresh() { this.requestRender(); }
-  clear() { this.pushScreenToScrollback(); this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.viewOffset = 0; this.initLines(); this.clearSelection(); this.schedulePersist(); this.requestRender(); }
+  clear() { this.pushScreenToScrollback(); this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.g0Charset = 'B'; this.g1Charset = 'B'; this.activeCharsetSlot = 'G0'; this.activeCharset = 'B'; this.viewOffset = 0; this.initLines(); this.clearSelection(); this.schedulePersist(); this.requestRender(); }
   restoreReplay(text) {
-    this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.viewOffset = 0; this.scrollback = []; this.initLines(); this.clearSelection(); this.parse(String(text || '')); this.requestRender();
+    this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.g0Charset = 'B'; this.g1Charset = 'B'; this.activeCharsetSlot = 'G0'; this.activeCharset = 'B'; this.viewOffset = 0; this.scrollback = []; this.initLines(); this.clearSelection(); this.parse(String(text || '')); this.requestRender();
   }
   select(x, y, len) { this.selection = { start:y * this.cols + x, end:y * this.cols + x + Math.max(1, len) - 1 }; this.requestRender(); }
   setSelectionRange(start, end) { this.selection = { start, end }; this.requestRender(); }
@@ -386,11 +401,13 @@ class VirtualTerm {
         continue;
       }
       if (this.state === 'escSkipOne') { this.state = 'normal'; continue; }
+      if (this.state === 'charset') { this.setCharset(this.charsetTarget, ch); this.state = 'normal'; continue; }
       if (this.state === 'esc') {
         if (ch === '[') { this.state = 'csi'; this.csi = ''; continue; }
         if (ch === ']') { this.state = 'osc'; this.oscEsc = false; continue; }
         if ('P_X^'.includes(ch)) { this.state = 'string'; this.stringEsc = false; continue; }
-        if ('()*+-./#%NO'.includes(ch)) { this.state = 'escSkipOne'; continue; }
+        if ('()*+-./'.includes(ch)) { this.charsetTarget = (ch === ')' || ch === '-' || ch === '.') ? 'G1' : 'G0'; this.state = 'charset'; continue; }
+        if ('#%NO'.includes(ch)) { this.state = 'escSkipOne'; continue; }
         this.handleEsc(ch); this.state = 'normal'; continue;
       }
       if (this.state === 'csi') {
@@ -410,8 +427,15 @@ class VirtualTerm {
     if (ch === '\n') { this.wrapPending = false; this.lineFeed(); return; }
     if (ch === '\b') { this.wrapPending = false; this.x = Math.max(0, this.x - 1); return; }
     if (ch === '\t') { this.wrapPending = false; this.x = Math.min(this.cols - 1, this.x + (8 - (this.x % 8))); return; }
+    if (ch === '\x0e') { this.activeCharsetSlot = 'G1'; this.activeCharset = this.g1Charset; return; }
+    if (ch === '\x0f') { this.activeCharsetSlot = 'G0'; this.activeCharset = this.g0Charset; return; }
     if (ch < ' ' && ch !== '\t') return;
-    this.putChar(ch);
+    this.putChar(mapCharsetChar(ch, this.activeCharset));
+  }
+  setCharset(target, designator) {
+    const charset = designator === '0' ? '0' : 'B';
+    if (target === 'G1') this.g1Charset = charset; else this.g0Charset = charset;
+    if (this.activeCharsetSlot === target) this.activeCharset = charset;
   }
   clearWideAt(x, y) {
     const line = this.lines[y];
