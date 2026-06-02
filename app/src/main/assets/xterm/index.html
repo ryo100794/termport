@@ -1118,7 +1118,11 @@ function scheduleWindowFit() {
 }
 function setActivePane(index) {
   index = normalizePaneIndex(index);
-  if (index !== activePane) { rememberPaneView(activePane); exitSelectionMode(false); }
+  if (index !== activePane) {
+    rememberPaneView(activePane);
+    exitSelectionMode(false);
+    if (dockerBarOpen) setDockerBarOpen(false);
+  }
   activePane = index;
   panes.forEach((_, i) => document.getElementById('pane' + i).classList.toggle('active', i === index));
   try { panes[index].term.clearSelection(); } catch (_) {}
@@ -1164,6 +1168,7 @@ function resetPaneForSession(paneIndex, session) {
 function switchPaneSession(paneIndex, session, connect=true) {
   paneIndex = normalizePaneIndex(paneIndex);
   const target = Math.max(0, Math.min(SESSION_COUNT - 1, Number(session) || 0));
+  if (panes[paneIndex] && panes[paneIndex].session !== target && dockerBarOpen) setDockerBarOpen(false);
   resetPaneForSession(paneIndex, target);
   if (connect) Android.connectSession(target);
   setActivePane(paneIndex);
