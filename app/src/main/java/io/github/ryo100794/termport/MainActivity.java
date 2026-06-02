@@ -54,6 +54,7 @@ public class MainActivity extends Activity {
     private final String[] backends = new String[]{"termux", "termux", "termux", "termux", "termux", "termux", "termux", "termux"};
     private final String[] dockerExecIds = new String[MAX_SESSIONS];
     private final String[] dockerContainerIds = new String[MAX_SESSIONS];
+    private final int[] connectGenerations = new int[MAX_SESSIONS];
     private final int[] rows = new int[]{32, 32, 32, 32, 32, 32, 32, 32};
     private final int[] cols = new int[]{100, 100, 100, 100, 100, 100, 100, 100};
     private WebView webView;
@@ -216,21 +217,41 @@ public class MainActivity extends Activity {
             return;
         }
         closeSocket(s);
+        int generation = ++connectGenerations[s];
         backends[s] = "termux";
         dockerExecIds[s] = null;
         dockerContainerIds[s] = null;
         startTermuxBridge(s);
         setStatus("Session " + (s + 1) + ": connecting " + HOST + ":" + portFor(s));
         io.execute(() -> {
-            try {
-                Socket sock = new Socket();
-                sock.connect(new InetSocketAddress(HOST, portFor(s)), 1500);
-                sockets[s] = sock;
-                socketOuts[s] = sock.getOutputStream();
-                setStatus("Session " + (s + 1) + ": connected");
-                readLoop(s, sock, sock.getInputStream());
-            } catch (Exception e) {
+            Exception lastError = null;
+            for (int attempt = 0; attempt < 18; attempt++) {
+                if (generation != connectGenerations[s]) return;
+                try {
+                    Socket sock = new Socket();
+                    sock.connect(new InetSocketAddress(HOST, portFor(s)), 900);
+                    if (generation != connectGenerations[s]) {
+                        try { sock.close(); } catch (Exception ignored) {}
+                        return;
+                    }
+                    sockets[s] = sock;
+                    socketOuts[s] = sock.getOutputStream();
+                    setStatus("Session " + (s + 1) + ": connected");
+                    readLoop(s, sock, sock.getInputStream());
+                    return;
+                } catch (Exception e) {
+                    lastError = e;
+                    try {
+                        Thread.sleep(Math.min(1000L, 180L * (attempt + 1)));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
+            if (generation == connectGenerations[s]) {
                 setStatus("Session " + (s + 1) + ": disconnected");
+                writeTerminal(s, "[TermPort] connect failed: " + (lastError == null ? "timeout" : lastError.getMessage()) + "\r\n");
                 closeSocket(s);
             }
         });
