@@ -105,8 +105,8 @@ window.setBridgeStatus = setStatus;
 
 const palette = {
   defaultFg:'#e8eaed', defaultBg:'#050505', cursor:'#ffffff', selection:'#2f7edb',
-  normal:['#050505','#f47067','#57ab5a','#c69026','#539bf5','#b083f0','#39c5cf','#d0d7de'],
-  bright:['#6e7681','#ff7b72','#7ee787','#d29922','#79c0ff','#d2a8ff','#56d4dd','#f0f6fc']
+  normal:['#8b949e','#f47067','#57ab5a','#c69026','#539bf5','#b083f0','#39c5cf','#d0d7de'],
+  bright:['#b1bac4','#ff7b72','#7ee787','#d29922','#79c0ff','#d2a8ff','#56d4dd','#f0f6fc']
 };
 function cloneAttr(a) { return { fg:a.fg, bg:a.bg, bold:a.bold, inverse:a.inverse }; }
 function blankCell(attr) { return { ch:' ', attr: cloneAttr(attr || VirtualTerm.defaultAttr) }; }
@@ -757,7 +757,7 @@ class XtermCompat {
       try { cell = this.term._core._renderService.dimensions.css.cell; } catch (_) {}
     }
     if (cell && cell.width > 0 && cell.height > 0) {
-      const cols = Math.max(2, Math.floor(width / cell.width));
+      const cols = Math.max(2, Math.floor(width / cell.width) - 1);
       const rows = Math.max(1, Math.floor(height / cell.height));
       if (this.term.cols !== cols || this.term.rows !== rows) this.term.resize(cols, rows);
     } else {
