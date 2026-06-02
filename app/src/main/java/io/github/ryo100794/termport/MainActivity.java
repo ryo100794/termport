@@ -568,10 +568,10 @@ public class MainActivity extends Activity {
     private JSONArray listDockerContainers() throws Exception {
         EngineResponse ping = dockerRequest("GET", "/_ping", null, 1500);
         if (ping.status < 200 || ping.status > 299) throw new Exception("/_ping HTTP " + ping.status);
-        EngineResponse list = dockerRequest("GET", "/containers/json?all=0", null, 4000);
+        EngineResponse list = dockerRequest("GET", "/containers/json?all=1", null, 4000);
         if (list.status < 200 || list.status > 299) {
             String detail = list.text();
-            throw new Exception(detail.isEmpty() ? "/containers/json HTTP " + list.status : detail);
+            throw new Exception(detail.isEmpty() ? "/containers/json?all=1 HTTP " + list.status : detail);
         }
         return new JSONArray(list.text());
     }
@@ -594,7 +594,7 @@ public class MainActivity extends Activity {
             try {
                 JSONArray containers = listDockerContainers();
                 publishDockerContainers(containers, null);
-                setStatus("Docker: " + containers.length() + " running containers");
+                setStatus("Docker: " + containers.length() + " containers");
             } catch (Exception e) {
                 publishDockerContainers(new JSONArray(), e.getMessage());
                 setStatus("Docker: unavailable " + dockerEndpoint());
@@ -648,18 +648,25 @@ public class MainActivity extends Activity {
             try {
                 EngineResponse ping = dockerRequest("GET", "/_ping", null, 1500);
                 if (ping.status < 200 || ping.status > 299) throw new Exception("/_ping HTTP " + ping.status);
-                EngineResponse list = dockerRequest("GET", "/containers/json?all=0", null, 4000);
+                EngineResponse list = dockerRequest("GET", "/containers/json?all=1", null, 4000);
                 if (list.status < 200 || list.status > 299) {
                     String detail = list.text();
                     throw new Exception(detail.isEmpty() ? "/containers/json HTTP " + list.status : detail);
                 }
                 JSONArray containers = new JSONArray(list.text());
-                if (containers.length() == 0) {
+                JSONObject container = null;
+                for (int i = 0; i < containers.length(); i++) {
+                    JSONObject candidate = containers.optJSONObject(i);
+                    if (candidate != null && "running".equalsIgnoreCase(candidate.optString("State", ""))) {
+                        container = candidate;
+                        break;
+                    }
+                }
+                if (container == null) {
                     setStatus("Docker " + (s + 1) + ": no running containers");
-                    writeTerminal(s, "[TermPort] Docker API is reachable, but no running containers were found.\r\n");
+                    writeTerminal(s, "[TermPort] Docker API is reachable, but no running containers are available. Open Docker list to see stopped containers.\r\n");
                     return;
                 }
-                JSONObject container = containers.getJSONObject(0);
                 String containerId = container.getString("Id");
                 JSONArray names = container.optJSONArray("Names");
                 String name = names != null && names.length() > 0 ? names.optString(0, "").replaceFirst("^/", "") : "";
