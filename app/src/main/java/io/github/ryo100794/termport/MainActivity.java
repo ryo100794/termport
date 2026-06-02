@@ -45,6 +45,7 @@ public class MainActivity extends Activity {
     private static final int DEFAULT_DOCKER_API_PORT = 2375;
     private static final String PREF_DOCKER_ENDPOINT = "docker_endpoint";
     private static final int MAX_SESSIONS = 8;
+    private static final int RAW_CAPTURE_LIMIT = 512 * 1024;
     private static final String TERMUX_PACKAGE = "com.termux";
     private static final String RUN_COMMAND_PERMISSION = "com.termux.permission.RUN_COMMAND";
     private static final String TERMUX_SETUP_COMMAND = "mkdir -p ~/.termux && "
@@ -759,8 +760,46 @@ public class MainActivity extends Activity {
         int s = clampSession(session);
         byte[] copy = new byte[len];
         System.arraycopy(data, 0, copy, 0, len);
+        appendRawCapture(s, copy);
         String b64 = Base64.encodeToString(copy, Base64.NO_WRAP);
         runOnUiThread(() -> webView.evaluateJavascript("window.terminalWriteBase64 && window.terminalWriteBase64(" + s + ", '" + b64 + "')", null));
+    }
+
+    private File rawCaptureFile(int session) {
+        int s = clampSession(session);
+        File dir = new File(getFilesDir(), "raw");
+        if (!dir.exists()) dir.mkdirs();
+        return new File(dir, "session-" + s + ".bin");
+    }
+
+    private synchronized void appendRawCapture(int session, byte[] data) {
+        if (data == null || data.length == 0) return;
+        File target = rawCaptureFile(session);
+        try (FileOutputStream out = new FileOutputStream(target, true)) {
+            out.write(data);
+        } catch (Exception ignored) {
+            return;
+        }
+        if (target.length() <= RAW_CAPTURE_LIMIT) return;
+        try (FileInputStream in = new FileInputStream(target); ByteArrayOutputStream all = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) >= 0) all.write(buf, 0, n);
+            byte[] bytes = all.toByteArray();
+            int start = Math.max(0, bytes.length - RAW_CAPTURE_LIMIT);
+            File tmp = new File(target.getParentFile(), target.getName() + ".tmp");
+            try (FileOutputStream out = new FileOutputStream(tmp, false)) {
+                out.write(bytes, start, bytes.length - start);
+            }
+            if (!tmp.renameTo(target)) {
+                try (FileOutputStream out = new FileOutputStream(target, false)) {
+                    out.write(bytes, start, bytes.length - start);
+                }
+                //noinspection ResultOfMethodCallIgnored
+                tmp.delete();
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private String jsQuote(String value) {
