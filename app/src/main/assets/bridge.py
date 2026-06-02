@@ -76,7 +76,11 @@ class Session:
         pid, fd = pty.fork()
         if pid == 0:
             os.environ.setdefault('TERM', 'xterm-256color')
-            os.environ.setdefault('LANG', 'ja_JP.UTF-8')
+            os.environ.setdefault('TERM_PROGRAM', 'TermPort')
+            os.environ.setdefault('COLORTERM', 'truecolor')
+            os.environ.setdefault('LANG', 'C.UTF-8')
+            os.environ.setdefault('LC_ALL', 'C.UTF-8')
+            os.environ.setdefault('LC_CTYPE', 'C.UTF-8')
             home = os.environ.get('HOME', '/data/data/com.termux/files/home')
             try:
                 os.chdir(home)
