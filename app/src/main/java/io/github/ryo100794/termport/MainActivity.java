@@ -1,6 +1,7 @@
 package io.github.ryo100794.termport;
 
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ComponentName;
@@ -8,8 +9,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
+import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -35,6 +38,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 public class MainActivity extends Activity {
+    private static final String TAG = "TermPort";
     private static final String HOST = "127.0.0.1";
     private static final int BASE_PORT = 8765;
     private static final String DEFAULT_DOCKER_API_HOST = "127.0.0.1";
@@ -59,6 +63,8 @@ public class MainActivity extends Activity {
     private final int[] cols = new int[]{100, 100, 100, 100, 100, 100, 100, 100};
     private WebView webView;
     private String bridgeAssetBase64;
+    private boolean termuxBridgeStarted = false;
+    private boolean initialSessionsStarted = false;
     private String dockerApiHost = DEFAULT_DOCKER_API_HOST;
     private int dockerApiPort = DEFAULT_DOCKER_API_PORT;
 
@@ -82,6 +88,15 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new Bridge(), "Android");
         setContentView(webView);
         webView.loadUrl("file:///android_asset/xterm/index.html");
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) {
+            webView.postDelayed(this::startInitialSessions, 700);
+            webView.postDelayed(this::startInitialSessions, 2000);
+        }
     }
 
     @Override
@@ -117,17 +132,32 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void startInitialSessions() {
+    private synchronized void startInitialSessions() {
+        if (initialSessionsStarted) return;
         if (!isTermuxInstalled()) {
+            Log.w(TAG, "Termux is not installed");
             showSetupHelp("Termux is not installed");
             return;
         }
         if (!ensureRunCommandPermission()) {
+            Log.w(TAG, "RUN_COMMAND permission is not granted");
             setStatus("Allow Termux connection permission");
             return;
         }
-        connectSession(0);
-        connectSession(1);
+        initialSessionsStarted = true;
+        Log.i(TAG, "Starting initial terminal sessions");
+        io.execute(() -> {
+            for (int i = 0; i < MAX_SESSIONS; i++) {
+                final int session = i;
+                runOnUiThread(() -> connectSession(session));
+                try {
+                    Thread.sleep(450);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        });
     }
 
     private void showSetupHelp(String reason) {
@@ -158,33 +188,50 @@ public class MainActivity extends Activity {
         return BASE_PORT + clampSession(session);
     }
 
-    private void startTermuxBridge(int session) {
+    private synchronized void startTermuxBridge(int session) {
         int s = clampSession(session);
+        if (termuxBridgeStarted) return;
+        termuxBridgeStarted = true;
+        Log.i(TAG, "Starting Termux bridge for " + MAX_SESSIONS + " sessions");
         try {
             Intent intent = new Intent("com.termux.RUN_COMMAND");
             intent.setComponent(new ComponentName(TERMUX_PACKAGE, "com.termux.app.RunCommandService"));
             String prefix = "/data/data/com.termux/files/usr";
             String home = "/data/data/com.termux/files/home";
             intent.putExtra("com.termux.RUN_COMMAND_PATH", prefix + "/bin/sh");
-            String bootstrap = "PREFIX=" + prefix + " HOME=" + home
+            String bootstrap = "export PREFIX=" + prefix
+                    + " HOME=" + home
                     + " PATH=" + prefix + "/bin:/system/bin:/system/xbin"
-                    + " IME_CONSOLE_PORT=" + portFor(s)
+                    + " IME_CONSOLE_BASE_PORT=" + BASE_PORT
+                    + " IME_CONSOLE_SESSION_COUNT=" + MAX_SESSIONS
                     + " IME_CONSOLE_ROWS=" + rows[s]
                     + " IME_CONSOLE_COLS=" + cols[s]
-                    + " sh -lc 'mkdir -p \"$HOME/.ime-console\""
-                    + " && if [ ! -x \"$PREFIX/bin/python\" ] && command -v pkg >/dev/null 2>&1; then pkg install -y python; fi"
-                    + " && if [ ! -x \"$PREFIX/bin/python\" ]; then echo python missing; exit 127; fi"
-                    + " && \"$PREFIX/bin/python\" -c \"import base64,pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode('" + bridgeAssetBase64() + "'))\" \"$HOME/.ime-console/bridge.py\""
-                    + " && chmod 700 \"$HOME/.ime-console/bridge.py\""
-                    + " && exec \"$PREFIX/bin/python\" \"$HOME/.ime-console/bridge.py\"'";
+                    + "; mkdir -p \"$HOME/.ime-console\""
+                    + "; if [ ! -x \"$PREFIX/bin/python\" ] && command -v pkg >/dev/null 2>&1; then pkg install -y python; fi"
+                    + "; if [ ! -x \"$PREFIX/bin/python\" ]; then echo python missing; exit 127; fi"
+                    + "; \"$PREFIX/bin/python\" -c \"import base64,pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode('" + bridgeAssetBase64() + "'))\" \"$HOME/.ime-console/bridge.py\""
+                    + "; chmod 700 \"$HOME/.ime-console/bridge.py\""
+                    + "; exec \"$PREFIX/bin/python\" \"$HOME/.ime-console/bridge.py\"";
             intent.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-lc", bootstrap});
             intent.putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home");
             intent.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
+            Intent resultIntent = new Intent(this, TermuxRunCommandReceiver.class);
+            resultIntent.setAction("io.github.ryo100794.termport.TERMUX_RUN_COMMAND_RESULT");
+            resultIntent.putExtra("execution_id", System.currentTimeMillis());
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags |= PendingIntent.FLAG_MUTABLE;
+            PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 1, resultIntent, flags);
+            intent.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT", pendingIntent);
             startService(intent);
+            Log.i(TAG, "RUN_COMMAND startService submitted");
             setStatus("Session " + (s + 1) + ": starting");
         } catch (SecurityException e) {
+            termuxBridgeStarted = false;
+            Log.e(TAG, "RUN_COMMAND permission rejected", e);
             showSetupHelp("Termux external command access is not enabled");
         } catch (Exception e) {
+            termuxBridgeStarted = false;
+            Log.e(TAG, "Termux auto-start failed", e);
             setStatus("Termux auto-start failed");
             writeTerminal(s, "Termux auto-start failed: " + e + "\r\n");
             showSetupHelp("Termux auto-start failed");
