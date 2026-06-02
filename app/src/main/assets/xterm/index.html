@@ -1251,8 +1251,17 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', scheduleWindowFit);
   window.visualViewport.addEventListener('scroll', scheduleWindowFit);
 }
-document.addEventListener('focusin', () => relayout('focusin'));
-document.addEventListener('focusout', () => relayout('focusout'));
+function refreshActivePaneSoon() {
+  requestAnimationFrame(() => {
+    try { active().term.refresh(); } catch (_) {}
+  });
+}
+document.addEventListener('focusin', ev => {
+  if (panes.some(p => ev.target === p.term.textarea)) refreshActivePaneSoon();
+});
+document.addEventListener('focusout', ev => {
+  if (panes.some(p => ev.target === p.term.textarea)) refreshActivePaneSoon();
+});
 
 let longPressTimer = null, selectionStartPoint = null, pointerSelection = null, pointerScroll = null, selectionMode = null;
 function selectedText() { return active().term.getSelection(); }
