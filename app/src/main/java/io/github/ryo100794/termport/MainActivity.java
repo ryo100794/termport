@@ -64,6 +64,7 @@ public class MainActivity extends Activity {
     private WebView webView;
     private String bridgeAssetBase64;
     private boolean termuxBridgeStarted = false;
+    private final boolean[] termuxSingleBridgeStarted = new boolean[MAX_SESSIONS];
     private boolean initialSessionsStarted = false;
     private String dockerApiHost = DEFAULT_DOCKER_API_HOST;
     private int dockerApiPort = DEFAULT_DOCKER_API_PORT;
@@ -238,6 +239,40 @@ public class MainActivity extends Activity {
         }
     }
 
+    private synchronized void startTermuxSingleBridge(int session) {
+        int s = clampSession(session);
+        if (termuxSingleBridgeStarted[s]) return;
+        termuxSingleBridgeStarted[s] = true;
+        Log.i(TAG, "Starting single Termux bridge for session " + (s + 1));
+        try {
+            Intent intent = new Intent("com.termux.RUN_COMMAND");
+            intent.setComponent(new ComponentName(TERMUX_PACKAGE, "com.termux.app.RunCommandService"));
+            String prefix = "/data/data/com.termux/files/usr";
+            String home = "/data/data/com.termux/files/home";
+            intent.putExtra("com.termux.RUN_COMMAND_PATH", prefix + "/bin/sh");
+            String bootstrap = "export PREFIX=" + prefix
+                    + " HOME=" + home
+                    + " PATH=" + prefix + "/bin:/system/bin:/system/xbin"
+                    + " IME_CONSOLE_BASE_PORT=" + portFor(s)
+                    + " IME_CONSOLE_SESSION_COUNT=1"
+                    + " IME_CONSOLE_ROWS=" + rows[s]
+                    + " IME_CONSOLE_COLS=" + cols[s]
+                    + "; mkdir -p \"$HOME/.ime-console\""
+                    + "; if [ ! -x \"$PREFIX/bin/python\" ] && command -v pkg >/dev/null 2>&1; then pkg install -y python; fi"
+                    + "; if [ ! -x \"$PREFIX/bin/python\" ]; then echo python missing; exit 127; fi"
+                    + "; \"$PREFIX/bin/python\" -c \"import base64,pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode('" + bridgeAssetBase64() + "'))\" \"$HOME/.ime-console/bridge.py\""
+                    + "; chmod 700 \"$HOME/.ime-console/bridge.py\""
+                    + "; exec \"$PREFIX/bin/python\" \"$HOME/.ime-console/bridge.py\"";
+            intent.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-lc", bootstrap});
+            intent.putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home");
+            intent.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
+            startService(intent);
+        } catch (Exception e) {
+            termuxSingleBridgeStarted[s] = false;
+            Log.e(TAG, "Single Termux bridge start failed", e);
+        }
+    }
+
     private void connectSession(int session) {
         connectSession(session, false);
     }
@@ -288,6 +323,7 @@ public class MainActivity extends Activity {
                     return;
                 } catch (Exception e) {
                     lastError = e;
+                    if (attempt == 5) runOnUiThread(() -> startTermuxSingleBridge(s));
                     try {
                         Thread.sleep(Math.min(1000L, 180L * (attempt + 1)));
                     } catch (InterruptedException interrupted) {
