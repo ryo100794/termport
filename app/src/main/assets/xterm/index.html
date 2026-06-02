@@ -108,7 +108,7 @@ const palette = {
   normal:['#8b949e','#f47067','#57ab5a','#c69026','#539bf5','#b083f0','#39c5cf','#d0d7de'],
   bright:['#b1bac4','#ff7b72','#7ee787','#d29922','#79c0ff','#d2a8ff','#56d4dd','#f0f6fc']
 };
-function cloneAttr(a) { return { fg:a.fg, bg:a.bg, bold:a.bold, inverse:a.inverse }; }
+function cloneAttr(a) { return { fg:a.fg, bg:a.bg, bold:!!a.bold, inverse:!!a.inverse, dim:!!a.dim, italic:!!a.italic, underline:!!a.underline, hidden:!!a.hidden }; }
 function blankCell(attr) { return { ch:' ', attr: cloneAttr(attr || VirtualTerm.defaultAttr) }; }
 function charWidth(ch) {
   const cp = ch.codePointAt(0) || 0;
@@ -117,7 +117,7 @@ function charWidth(ch) {
   return 2;
 }
 class VirtualTerm {
-  static defaultAttr = { fg:palette.defaultFg, bg:palette.defaultBg, bold:false, inverse:false };
+  static defaultAttr = { fg:palette.defaultFg, bg:palette.defaultBg, bold:false, inverse:false, dim:false, italic:false, underline:false, hidden:false };
   constructor(host, opts={}) {
     this.host = host;
     this.element = host;
@@ -136,7 +136,7 @@ class VirtualTerm {
     this.normalScreen = null;
     this.altScreen = null;
     this.isAltScreen = false;
-    this.state = 'normal'; this.esc = ''; this.csi = ''; this.oscEsc = false;
+    this.state = 'normal'; this.esc = ''; this.csi = ''; this.oscEsc = false; this.stringEsc = false;
     this.pendingRender = false; this.dataHandlers = [];
     this.selection = null;
     this.compositionPreview = '';
@@ -374,23 +374,34 @@ class VirtualTerm {
   write(text, cb) { this.parse(text); this.requestRender(); this.schedulePersist(); if (cb) cb(); }
   parse(text) {
     for (const ch of text) {
+      if (this.state === 'string') {
+        if (ch === '\x9c' || (this.stringEsc && ch === '\\')) { this.state = 'normal'; this.stringEsc = false; }
+        else this.stringEsc = ch === '\x1b';
+        continue;
+      }
       if (this.state === 'osc') {
         if (this.oscEsc && ch === '\\') { this.state = 'normal'; this.oscEsc = false; }
-        else if (ch === '\x07') { this.state = 'normal'; this.oscEsc = false; }
+        else if (ch === '\x07' || ch === '\x9c') { this.state = 'normal'; this.oscEsc = false; }
         else this.oscEsc = ch === '\x1b';
         continue;
       }
+      if (this.state === 'escSkipOne') { this.state = 'normal'; continue; }
       if (this.state === 'esc') {
         if (ch === '[') { this.state = 'csi'; this.csi = ''; continue; }
         if (ch === ']') { this.state = 'osc'; this.oscEsc = false; continue; }
+        if ('P_X^'.includes(ch)) { this.state = 'string'; this.stringEsc = false; continue; }
+        if ('()*+-./#%NO'.includes(ch)) { this.state = 'escSkipOne'; continue; }
         this.handleEsc(ch); this.state = 'normal'; continue;
       }
       if (this.state === 'csi') {
         if (/[@-~]/.test(ch)) { this.handleCsi(this.csi, ch); this.state = 'normal'; this.csi = ''; }
-        else this.csi += ch;
+        else { this.csi += ch; if (this.csi.length > 256) { this.state = 'normal'; this.csi = ''; } }
         continue;
       }
       if (ch === '\x1b') { this.state = 'esc'; continue; }
+      if (ch === '\x9b') { this.state = 'csi'; this.csi = ''; continue; }
+      if (ch === '\x9d') { this.state = 'osc'; this.oscEsc = false; continue; }
+      if ('\x90\x98\x9e\x9f'.includes(ch)) { this.state = 'string'; this.stringEsc = false; continue; }
       this.putControlOrChar(ch);
     }
   }
@@ -471,29 +482,38 @@ class VirtualTerm {
     else if (ch === 'M') { if (this.y === this.scrollTop) this.scrollDown(1, this.scrollTop, this.scrollBottom); else if (this.y > 0) this.y--; }
     else if (ch === 'E') { this.x = 0; this.lineFeed(); }
   }
+  csiParamText(raw) {
+    return String(raw || '').replace(/^[?<=>]*/, '').replace(/[ -\/]/g, '');
+  }
   parseParams(raw) {
-    raw = raw.replace(/^\?/, '');
+    raw = this.csiParamText(raw);
     if (!raw) return [0];
+    return raw.split(/[;:]/).map(v => v === '' ? 0 : Number(v) || 0);
+  }
+  parseSgrParams(raw) {
+    raw = this.csiParamText(raw);
+    if (!raw) return [0];
+    if (raw.includes(':')) return raw.split(/[;:]/).filter(v => v !== '').map(v => Number(v) || 0);
     return raw.split(';').map(v => v === '' ? 0 : Number(v) || 0);
   }
   handleCsi(raw, final) {
-    if ((final === 'h' || final === 'l') && /^\?/.test(raw)) {
+    const privateMode = /^\?/.test(raw);
+    if ((final === 'h' || final === 'l') && privateMode) {
       const enabled = final === 'h';
-      const modes = raw.slice(1).split(';').map(v => Number(v) || 0);
-      for (const mode of modes) this.setPrivateMode(mode, enabled);
+      const modes = this.parseParams(raw);
       if (modes.some(v => v === 47 || v === 1047 || v === 1049)) {
         this.setAltScreen(enabled, modes.includes(1049) || modes.includes(1047));
-        return;
       }
+      for (const mode of modes) this.setPrivateMode(mode, enabled);
       return;
     }
-    const p = this.parseParams(raw);
+    const p = final === 'm' ? this.parseSgrParams(raw) : this.parseParams(raw);
     const n = (i, d=1) => p[i] || d;
-    if ('ABCDEGHFfHd`r'.includes(final)) this.wrapPending = false;
+    if ('ABCDEGHFfHade`r'.includes(final)) this.wrapPending = false;
     if (final === 'h' || final === 'l') { for (const mode of p) this.setAnsiMode(mode, final === 'h'); return; }
     if (final === 'A') this.y = Math.max(0, this.y - n(0));
-    else if (final === 'B') this.y = Math.min(this.rows - 1, this.y + n(0));
-    else if (final === 'C') this.x = Math.min(this.cols - 1, this.x + n(0));
+    else if (final === 'B' || final === 'e') this.y = Math.min(this.rows - 1, this.y + n(0));
+    else if (final === 'C' || final === 'a') this.x = Math.min(this.cols - 1, this.x + n(0));
     else if (final === 'D') this.x = Math.max(0, this.x - n(0));
     else if (final === 'G' || final === '`') this.x = Math.max(0, Math.min(this.cols - 1, n(0) - 1));
     else if (final === 'E') { this.y = Math.min(this.rows - 1, this.y + n(0)); this.x = 0; }
@@ -514,6 +534,8 @@ class VirtualTerm {
     else if (final === 'b') { const count = n(0); for (let i=0; i<count; i++) this.putChar(this.lastChar || ' '); }
     else if (final === 'S') this.scrollUp(n(0), this.scrollTop, this.scrollBottom);
     else if (final === 'T') this.scrollDown(n(0), this.scrollTop, this.scrollBottom);
+    else if (final === 'n' && !privateMode) { if ((p[0] || 0) === 5) this.emitData('\x1b[0n'); else if ((p[0] || 0) === 6) this.emitData(`\x1b[${this.y + 1};${this.x + 1}R`); }
+    else if (final === 'c' && !privateMode) this.emitData('\x1b[?1;2c');
   }
   setScrollRegion(top, bottom) {
     top = Math.max(0, Math.min(this.rows - 1, Number.isFinite(top) ? top : 0));
@@ -546,9 +568,16 @@ class VirtualTerm {
       const c = params[i];
       if (c === 0) this.attr = cloneAttr(VirtualTerm.defaultAttr);
       else if (c === 1) this.attr.bold = true;
-      else if (c === 22) this.attr.bold = false;
+      else if (c === 2) this.attr.dim = true;
+      else if (c === 3) this.attr.italic = true;
+      else if (c === 4) this.attr.underline = true;
+      else if (c === 8) this.attr.hidden = true;
+      else if (c === 21 || c === 22) { this.attr.bold = false; this.attr.dim = false; }
+      else if (c === 23) this.attr.italic = false;
+      else if (c === 24) this.attr.underline = false;
       else if (c === 7) this.attr.inverse = true;
       else if (c === 27) this.attr.inverse = false;
+      else if (c === 28) this.attr.hidden = false;
       else if (c === 39) this.attr.fg = palette.defaultFg;
       else if (c === 49) this.attr.bg = palette.defaultBg;
       else if (c >= 30 && c <= 37) this.attr.fg = palette.normal[c - 30];
@@ -660,7 +689,7 @@ class VirtualTerm {
     for (let y=0; y<this.rows; y++) {
       for (let x=0; x<this.cols; x++) {
         const cell = visible[y][x];
-        if (cell.ch === ' ' || cell.cont) continue;
+        if (cell.ch === ' ' || cell.cont || cell.attr.hidden) continue;
         let fg = cell.attr.fg, bg = cell.attr.bg;
         if (cell.attr.inverse) [fg, bg] = [bg, fg];
         fg = this.contrastFg(fg, bg);
