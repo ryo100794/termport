@@ -43,7 +43,7 @@
 </style>
 </head>
 <body class="single">
-  <div id="top"><div id="status">starting</div><button id="split">Split</button><button id="copySel">Copy</button><button id="redraw">Redraw</button><button id="skydnir">Docker</button><button id="connect">Connect</button></div>
+  <div id="top"><div id="status">starting</div><button id="autoYes">Auto Yes</button><button id="split">Split</button><button id="copySel">Copy</button><button id="redraw">Redraw</button><button id="skydnir">Docker</button><button id="connect">Connect</button></div>
   <div id="sessions"></div>
   <div id="dockerBar"></div>
   <div id="terms">
@@ -84,6 +84,7 @@ const XTERM_SCROLLBACK = 20000;
 const XTERM_TRANSCRIPT_LIMIT = 1024 * 1024;
 const SESSION_COUNT = 8;
 const HIDDEN_SESSION_BACKLOG_LIMIT = 1024 * 1024;
+const YES_PROCEED_TEXT = 'Yes, proceed';
 const TERMINAL_FONT_FAMILY = '"Droid Sans Mono","Roboto Mono","Noto Sans Mono CJK JP",monospace';
 const TERMINAL_LINE_HEIGHT = 1.2;
 let fontSize = DEFAULT_FONT_SIZE;
@@ -92,6 +93,7 @@ let split = false;
 let splitCount = 1;
 let selecting = false;
 let selectionInputBlockUntil = 0;
+let autoYesProceed = false;
 let imeSuppressText = '';
 let imeSuppressUntil = 0;
 const storageKey = 'termPortLayoutV3';
@@ -99,7 +101,7 @@ const scrollbackStoragePrefix = 'imeConsoleScrollbackV1:';
 const sessionViewStates = {};
 let viewStateSaveTimer = null;
 const sessionResizeState = Array.from({ length:SESSION_COUNT }, () => ({ rows:-1, cols:-1 }));
-function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split:splitCount > 1, splitCount, activePane, fontSize, sessions: panes.map(p => p.session), viewStates: sessionViewStates })); } catch (_) {} }
+function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split:splitCount > 1, splitCount, activePane, fontSize, autoYesProceed, sessions: panes.map(p => p.session), viewStates: sessionViewStates })); } catch (_) {} }
 function loadLayout() { try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (_) { return {}; } }
 const rendererMode = 'safe';
 function clampFontSize(value) { return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(value * 10) / 10)); }
@@ -1031,7 +1033,8 @@ const panes = [makePane(0), makePane(1), makePane(2), makePane(3)];
 const sessionDecoders = Array.from({ length:SESSION_COUNT }, () => new TextDecoder('utf-8'));
 const hiddenSessionBacklog = Array.from({ length:SESSION_COUNT }, () => '');
 const sessionReplayText = Array.from({ length:SESSION_COUNT }, () => '');
-for (const p of panes) { p.pending = ''; p.writeScheduled = false; }
+const yesProceedTails = Array.from({ length:SESSION_COUNT }, () => '');
+for (const p of panes) { p.pending = ''; p.writeScheduled = false; p.lastActiveAt = 0; }
 function normalizeSessionId(session) { return Math.max(0, Math.min(SESSION_COUNT - 1, Number(session) || 0)); }
 function appendSessionReplay(session, text) {
   const s = normalizeSessionId(session);
@@ -1066,6 +1069,38 @@ function visiblePaneCount() { return Math.max(1, Math.min(panes.length, Number(s
 function isPaneVisible(index) { return index >= 0 && index < visiblePaneCount(); }
 function normalizePaneIndex(index) { index = Math.max(0, Math.min(panes.length - 1, Number(index) || 0)); return isPaneVisible(index) ? index : 0; }
 function active() { activePane = normalizePaneIndex(activePane); return panes[activePane]; }
+function visiblePaneForSession(session) {
+  const s = normalizeSessionId(session);
+  for (let i=0; i<panes.length; i++) if (isPaneVisible(i) && panes[i].session === s) return i;
+  return -1;
+}
+function leastRecentlyActiveVisiblePane() {
+  let best = 0, bestAt = Infinity;
+  for (let i=0; i<visiblePaneCount(); i++) {
+    const at = Number(panes[i].lastActiveAt || 0);
+    if (at < bestAt) { best = i; bestAt = at; }
+  }
+  return normalizePaneIndex(best);
+}
+function focusSessionForPrompt(session) {
+  if (!autoYesProceed) return;
+  const s = normalizeSessionId(session);
+  let paneIndex = visiblePaneForSession(s);
+  if (paneIndex < 0) {
+    paneIndex = leastRecentlyActiveVisiblePane();
+    switchPaneSession(paneIndex, s, true);
+  } else {
+    setActivePane(paneIndex);
+  }
+  setStatus(`S${s + 1} needs confirmation`);
+}
+function inspectYesProceedOutput(session, text) {
+  if (!autoYesProceed || !text) return;
+  const s = normalizeSessionId(session);
+  const scan = (yesProceedTails[s] || '') + text;
+  if (scan.includes(YES_PROCEED_TEXT)) focusSessionForPrompt(s);
+  yesProceedTails[s] = scan.slice(-Math.max(0, YES_PROCEED_TEXT.length - 1));
+}
 function paneViewSnapshot(index) {
   const p = panes[index];
   if (!p || !p.term.getViewState) return null;
@@ -1201,6 +1236,7 @@ function setActivePane(index) {
     if (dockerBarOpen) setDockerBarOpen(false);
   }
   activePane = index;
+  if (panes[index]) panes[index].lastActiveAt = Date.now();
   panes.forEach((_, i) => document.getElementById('pane' + i).classList.toggle('active', i === index));
   try { panes[index].term.clearSelection(); } catch (_) {}
   panes[index].term.focus();
@@ -1212,6 +1248,7 @@ function terminalWriteBase64(session, b64) {
   const bytes = fromB64(b64);
   const text = sessionDecoders[s].decode(bytes, { stream:true });
   appendSessionReplay(s, text);
+  inspectYesProceedOutput(s, text);
   let delivered = false;
   for (const p of panes) {
     if (p.session === s) { queueWrite(p, text); delivered = true; }
@@ -1502,6 +1539,7 @@ function installSelectionHandleDrag(paneIndex, host, handle, which) {
     if (!selectionMode || selectionMode.pane !== paneIndex) return;
     stop(ev);
     activePane = paneIndex;
+    if (panes[paneIndex]) panes[paneIndex].lastActiveAt = Date.now();
     panes.forEach((_, i) => document.getElementById('pane' + i).classList.toggle('active', i === paneIndex));
     selectionMode.dragging = true;
     selectionMode.dragHandle = which;
@@ -1540,6 +1578,7 @@ for (let i=0; i<panes.length; i++) {
     ev.preventDefault();
     if (selectionMode && selectionMode.pane === i) {
       activePane = i;
+      if (panes[i]) panes[i].lastActiveAt = Date.now();
       panes.forEach((_, n) => document.getElementById('pane' + n).classList.toggle('active', n === i));
       pointerSelection = null;
       selectionStartPoint = null;
@@ -1732,6 +1771,12 @@ const sessions = document.getElementById('sessions');
 function refreshSessions() { for (const [i,b] of [...sessions.children].entries()) b.classList.toggle('active', i === active().session); }
 for (let i=0; i<SESSION_COUNT; i++) { const b=document.createElement('button'); b.textContent='S'+(i+1); b.onclick=()=>switchPaneSession(activePane, i, true); sessions.appendChild(b); }
 refreshSessions();
+function refreshAutoYesButton() {
+  const b = document.getElementById('autoYes');
+  if (!b) return;
+  b.classList.toggle('active', !!autoYesProceed);
+}
+document.getElementById('autoYes').onclick = () => { autoYesProceed = !autoYesProceed; refreshAutoYesButton(); saveLayout(); setStatus(autoYesProceed ? 'Auto Yes on' : 'Auto Yes off'); };
 function refreshSplitButton() {
   const b = document.getElementById('split');
   b.textContent = splitCount === 4 ? 'Split 4' : splitCount === 2 ? 'Split 2' : 'Split 1';
@@ -1747,7 +1792,7 @@ function applySplitState(countOrEnabled, persist=true) {
   document.body.classList.toggle('split4', splitCount === 4);
   refreshSplitButton();
   if (!isPaneVisible(activePane)) setActivePane(0);
-  else { panes.forEach((_, i) => document.getElementById('pane' + i).classList.toggle('active', activePane === i)); refreshSessions(); }
+  else { if (panes[activePane]) panes[activePane].lastActiveAt = Date.now(); panes.forEach((_, i) => document.getElementById('pane' + i).classList.toggle('active', activePane === i)); refreshSessions(); }
   if (persist) saveLayout();
   relayout('split');
   requestAnimationFrame(() => relayout('split-frame'));
@@ -1764,6 +1809,8 @@ setTimeout(() => {
   else if (typeof saved.split === 'boolean') splitCount = saved.split ? 2 : 1;
   split = splitCount > 1;
   if (typeof saved.fontSize === 'number') fontSize = clampFontSize(saved.fontSize);
+  autoYesProceed = saved.autoYesProceed === true;
+  refreshAutoYesButton();
   if (saved.viewStates && typeof saved.viewStates === 'object') Object.assign(sessionViewStates, saved.viewStates);
   applySplitState(splitCount, false);
   if (Array.isArray(saved.sessions)) {
