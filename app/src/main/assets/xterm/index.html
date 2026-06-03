@@ -21,8 +21,10 @@
   .term canvas { display:block; background:#050505; }
   .term .xterm { width:100%; height:100%; padding:0; }
   .term .xterm-viewport { overflow:hidden !important; }
-  .term textarea { position:absolute; left:0; top:0; width:100%; height:100%; opacity:.01; border:0; padding:0; resize:none; color:transparent; background:transparent; caret-color:transparent; outline:0; z-index:1; }
-  .selectionHandle { display:none; position:absolute; width:18px; height:18px; border-radius:50%; background:#ffffff; border:2px solid #0b5cad; box-shadow:0 1px 5px rgba(0,0,0,.55); z-index:4; pointer-events:none; transform:translate(-50%, -50%); }
+  .term textarea { position:absolute; left:0; top:0; width:100%; height:100%; opacity:.01; border:0; padding:0; resize:none; color:transparent; background:transparent; caret-color:transparent; outline:0; z-index:1; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  .selectionOverlay { position:absolute; inset:0; z-index:3; pointer-events:none; overflow:hidden; }
+  .selectionRect { position:absolute; background:rgba(47,126,219,.55); mix-blend-mode:screen; }
+  .selectionHandle { display:none; position:absolute; width:24px; height:24px; border-radius:50%; background:#ffffff; border:2px solid #0b5cad; box-shadow:0 1px 5px rgba(0,0,0,.55); z-index:6; pointer-events:auto; touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; transform:translate(-50%, -50%); }
   .selectionHandle.visible { display:block; }
   body.single .pane:not(#pane0), body.split2 #pane2, body.split2 #pane3 { display:none; }
   body.split4 #terms { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-rows:minmax(0,1fr) minmax(0,1fr); }
@@ -951,16 +953,21 @@ class XtermCompat {
 function makePane(index) {
   const host = document.getElementById('term' + index);
   const term = rendererMode === 'safe' ? new XtermCompat(host, { fontSize }) : new VirtualTerm(host, { fontSize });
+  const overlay = document.createElement('div');
   const handleStart = document.createElement('div');
   const handleEnd = document.createElement('div');
+  overlay.className = 'selectionOverlay';
   handleStart.className = 'selectionHandle selectionStart';
   handleEnd.className = 'selectionHandle selectionEnd';
+  host.appendChild(overlay);
   host.appendChild(handleStart);
   host.appendChild(handleEnd);
+  installSelectionHandleDrag(index, host, handleStart, 'start');
+  installSelectionHandleDrag(index, host, handleEnd, 'end');
   term.onData(data => sendKey(data));
   installDirectImeFlush(term, index);
   if (term.setPersistKey) term.setPersistKey('session-' + index);
-  return { term, session: index, decoder: new TextDecoder('utf-8'), handles:[handleStart, handleEnd] };
+  return { term, session: index, decoder: new TextDecoder('utf-8'), overlay, handles:[handleStart, handleEnd] };
 }
 const panes = [makePane(0), makePane(1), makePane(2), makePane(3)];
 const sessionDecoders = Array.from({ length:SESSION_COUNT }, () => new TextDecoder('utf-8'));
@@ -1213,7 +1220,7 @@ function installDirectImeFlush(term, paneIndex) {
   const wasJustSent = text => text && text === lastImmediate && Date.now() - lastImmediateAt < IMMEDIATE_DEDUPE_MS;
   const consumeImmediate = text => { if (!isImmediateAscii(text)) return false; if (wasJustSent(text)) { helper.value = ''; return true; } if (!writePaneText(text)) return false; rememberImmediate(text); return true; };
   const flushHelper = () => { if (selectionDragActive() || Date.now() < selectionInputBlockUntil || !helper.value) return false; const text = helper.value; if (wasJustSent(text)) { helper.value = ''; setPreview(''); return true; } if (helperComposing && !isImmediateAscii(text)) { setPreview(text); return false; } helper.value = ''; return writePaneText(text); };
-  helper.addEventListener('blur', () => { if (activePane === paneIndex && !selectionDragActive()) setTimeout(() => { try { helper.focus({ preventScroll:true }); } catch (_) { helper.focus(); } }, IME_BLUR_REFOCUS_MS); }, true);
+  helper.addEventListener('blur', () => { if (activePane === paneIndex && !selectionMode && !selectionDragActive() && Date.now() >= selectionInputBlockUntil) setTimeout(() => { if (!selectionMode && Date.now() >= selectionInputBlockUntil) try { helper.focus({ preventScroll:true }); } catch (_) { helper.focus(); } }, IME_BLUR_REFOCUS_MS); }, true);
   helper.addEventListener('compositionstart', () => { helperComposing = true; setPreview(helper.value || ''); }, true);
   helper.addEventListener('compositionupdate', ev => { const text = helper.value || ev.data || ''; if (consumeImmediate(text)) { ev.preventDefault(); ev.stopImmediatePropagation(); helperComposing = false; } else setPreview(text); }, true);
   helper.addEventListener('compositionend', ev => { const text = helper.value || ev.data || ''; helperComposing = false; setPreview(''); if (wasJustSent(text)) { helper.value = ''; return; } setTimeout(flushHelper, 0); }, true);
@@ -1280,10 +1287,42 @@ document.addEventListener('focusout', ev => {
 let longPressTimer = null, selectionStartPoint = null, pointerSelection = null, pointerScroll = null, selectionMode = null;
 function selectedPane() { return selectionMode && panes[selectionMode.pane] ? panes[selectionMode.pane] : active(); }
 function selectedText() { return selectedPane().term.getSelection(); }
+function clearNativeSelection() { try { const sel = window.getSelection && window.getSelection(); if (sel) sel.removeAllRanges(); } catch (_) {} }
+function preventNativeTerminalMenu(ev) {
+  if (ev.target && ev.target.closest && ev.target.closest('#terms')) { ev.preventDefault(); ev.stopPropagation(); clearNativeSelection(); }
+}
+document.addEventListener('contextmenu', preventNativeTerminalMenu, true);
+document.addEventListener('selectstart', preventNativeTerminalMenu, true);
+document.addEventListener('dragstart', preventNativeTerminalMenu, true);
 function hideSelectionHandles() {
   for (const p of panes) {
+    if (p.overlay) p.overlay.textContent = '';
     if (!p.handles) continue;
     for (const h of p.handles) h.classList.remove('visible');
+  }
+}
+function renderSelectionOverlay(p, term, canvasRect, hostRect, start, end) {
+  if (!p.overlay) return;
+  p.overlay.textContent = '';
+  const first = Math.min(start, end);
+  const last = Math.max(start, end);
+  const cellW = canvasRect.width / Math.max(1, term.cols);
+  const cellH = canvasRect.height / Math.max(1, term.rows);
+  const topOffset = canvasRect.top - hostRect.top;
+  const leftOffset = canvasRect.left - hostRect.left;
+  const firstRow = Math.max(0, Math.floor(first / term.cols));
+  const lastRow = Math.min(term.rows - 1, Math.floor(last / term.cols));
+  for (let row = firstRow; row <= lastRow; row++) {
+    const rowStart = row * term.cols;
+    const from = row === firstRow ? first - rowStart : 0;
+    const to = row === lastRow ? last - rowStart : term.cols - 1;
+    const rect = document.createElement('div');
+    rect.className = 'selectionRect';
+    rect.style.left = `${leftOffset + from * cellW}px`;
+    rect.style.top = `${topOffset + row * cellH}px`;
+    rect.style.width = `${Math.max(1, to - from + 1) * cellW}px`;
+    rect.style.height = `${cellH}px`;
+    p.overlay.appendChild(rect);
   }
 }
 function showSelectionHandles(paneIndex, start, end) {
@@ -1296,6 +1335,7 @@ function showSelectionHandles(paneIndex, start, end) {
   const hostRect = document.getElementById('term' + paneIndex).getBoundingClientRect();
   const cellW = canvasRect.width / Math.max(1, term.cols);
   const cellH = canvasRect.height / Math.max(1, term.rows);
+  renderSelectionOverlay(p, term, canvasRect, hostRect, start, end);
   const place = (handle, idx) => {
     const x = idx % term.cols;
     const y = Math.floor(idx / term.cols);
@@ -1359,10 +1399,14 @@ function applySelectionMode() {
 }
 function beginSelectionDrag(paneIndex, pointerId, cell, host, keepAnchor) {
   selecting = true;
-  selectionInputBlockUntil = 0;
-  pointerSelection = { pane:paneIndex, pointerId };
-  if (!selectionMode || selectionMode.pane !== paneIndex || !keepAnchor) selectionMode = { pane:paneIndex, start:cell, end:cell, dragging:true };
-  else { selectionMode.dragging = true; selectionMode.end = cell; }
+  selectionInputBlockUntil = Date.now() + SELECTION_ACTIVE_BLOCK_MS;
+  pointerSelection = { pane:paneIndex, pointerId, handle:'end' };
+  if (!selectionMode || selectionMode.pane !== paneIndex || !keepAnchor) selectionMode = { pane:paneIndex, start:cell, end:cell, dragging:true, dragHandle:'end' };
+  else { selectionMode.dragging = true; selectionMode.dragHandle = 'end'; selectionMode.end = cell; }
+  pointerScroll = null;
+  scrollTouch = null;
+  clearNativeSelection();
+  try { panes[paneIndex].term.textarea.blur(); } catch (_) {}
   setStatus('Select: drag range, Copy/Clear to finish');
   try { host.setPointerCapture(pointerId); } catch (_) {}
   applySelectionMode();
@@ -1371,12 +1415,56 @@ function finishSelectionDrag(paneIndex, ev) {
   if (pointerSelection && ev.pointerId !== pointerSelection.pointerId) return;
   if (longPressTimer) clearTimeout(longPressTimer);
   longPressTimer = null;
-  if (selectionMode) selectionMode.dragging = false;
+  if (selectionMode) { selectionMode.dragging = false; selectionMode.dragHandle = null; }
   pointerSelection = null;
   pointerScroll = null;
   selectionStartPoint = null;
   selectionInputBlockUntil = Date.now() + SELECTION_RELEASE_BLOCK_MS;
   try { document.getElementById('term' + paneIndex).releasePointerCapture(ev.pointerId); } catch (_) {}
+}
+function installSelectionHandleDrag(paneIndex, host, handle, which) {
+  const stop = ev => { ev.preventDefault(); ev.stopPropagation(); clearNativeSelection(); };
+  handle.addEventListener('contextmenu', stop, true);
+  handle.addEventListener('selectstart', stop, true);
+  handle.addEventListener('dragstart', stop, true);
+  handle.addEventListener('touchstart', stop, { passive:false });
+  handle.addEventListener('touchmove', stop, { passive:false });
+  handle.addEventListener('touchend', stop, { passive:false });
+  handle.addEventListener('touchcancel', stop, { passive:false });
+  handle.addEventListener('pointerdown', ev => {
+    if (!selectionMode || selectionMode.pane !== paneIndex) return;
+    stop(ev);
+    activePane = paneIndex;
+    panes.forEach((_, i) => document.getElementById('pane' + i).classList.toggle('active', i === paneIndex));
+    selectionMode.dragging = true;
+    selectionMode.dragHandle = which;
+    pointerSelection = { pane:paneIndex, pointerId:ev.pointerId, handle:which };
+    pointerScroll = null;
+    scrollTouch = null;
+    selectionInputBlockUntil = Date.now() + SELECTION_ACTIVE_BLOCK_MS;
+    try { panes[paneIndex].term.textarea.blur(); } catch (_) {}
+    try { handle.setPointerCapture(ev.pointerId); } catch (_) {}
+  }, { passive:false });
+  handle.addEventListener('pointermove', ev => {
+    if (!selectionMode || selectionMode.pane !== paneIndex || !selectionMode.dragging || !pointerSelection || pointerSelection.pointerId !== ev.pointerId) return;
+    stop(ev);
+    const cell = cellFromPoint(panes[paneIndex].term, ev);
+    if (selectionMode.dragHandle === 'start') selectionMode.start = cell; else selectionMode.end = cell;
+    applySelectionMode();
+  }, { passive:false });
+  const finish = ev => {
+    if (pointerSelection && pointerSelection.pointerId !== ev.pointerId) return;
+    stop(ev);
+    if (selectionMode && selectionMode.pane === paneIndex) { selectionMode.dragging = false; selectionMode.dragHandle = null; }
+    pointerSelection = null;
+    pointerScroll = null;
+    scrollTouch = null;
+    selectionStartPoint = null;
+    selectionInputBlockUntil = Date.now() + SELECTION_ACTIVE_BLOCK_MS;
+    try { handle.releasePointerCapture(ev.pointerId); } catch (_) {}
+  };
+  handle.addEventListener('pointerup', finish, { passive:false });
+  handle.addEventListener('pointercancel', finish, { passive:false });
 }
 for (let i=0; i<panes.length; i++) {
   const host = document.getElementById('term' + i);
@@ -1398,12 +1486,14 @@ for (let i=0; i<panes.length; i++) {
       scrollTouch = null;
       beginSelectionDrag(i, ev.pointerId, startCell, host, false);
     }, LONG_PRESS_MS);
-    refocusActiveSoon();
+    setTimeout(() => { if (!selectionMode && !pointerScroll && activePane === i) refocusActiveSoon(); }, LONG_PRESS_MS + 40);
   }, { passive:false });
   host.addEventListener('pointermove', ev => {
     if (selectionMode && selectionMode.dragging && pointerSelection && pointerSelection.pane === i && ev.pointerId === pointerSelection.pointerId) {
       ev.preventDefault();
-      selectionMode.end = cellFromPoint(panes[i].term, ev);
+      ev.stopPropagation();
+      const cell = cellFromPoint(panes[i].term, ev);
+      if (selectionMode.dragHandle === 'start') selectionMode.start = cell; else selectionMode.end = cell;
       applySelectionMode();
       return;
     }
@@ -1450,6 +1540,7 @@ document.getElementById('terms').addEventListener('touchstart', ev => {
   const pane = paneIndexFromTarget(ev.target);
   if (selectionMode && selectionMode.pane === pane) {
     selectionMode.dragging = true;
+    selectionMode.dragHandle = 'end';
     selectionMode.end = cellFromPoint(panes[pane].term, ev.touches[0]);
     pointerScroll = null;
     applySelectionMode();
@@ -1461,7 +1552,8 @@ document.getElementById('terms').addEventListener('touchstart', ev => {
 document.getElementById('terms').addEventListener('touchmove', ev => {
   if (selectionMode && selectionMode.dragging && ev.touches.length === 1) {
     const pane = selectionMode.pane;
-    selectionMode.end = cellFromPoint(panes[pane].term, ev.touches[0]);
+    const cell = cellFromPoint(panes[pane].term, ev.touches[0]);
+    if (selectionMode.dragHandle === 'start') selectionMode.start = cell; else selectionMode.end = cell;
     applySelectionMode();
     ev.preventDefault();
     return;
@@ -1489,6 +1581,7 @@ document.getElementById('terms').addEventListener('touchend', () => {
   scrollTouch = null;
   if (selectionMode && selectionMode.dragging) {
     selectionMode.dragging = false;
+    selectionMode.dragHandle = null;
     pointerSelection = null;
     pointerScroll = null;
     selectionStartPoint = null;
