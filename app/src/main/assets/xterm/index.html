@@ -369,10 +369,9 @@ class VirtualTerm {
   select(x, y, len) { this.selection = { start:y * this.cols + x, end:y * this.cols + x + Math.max(1, len) - 1 }; this.requestRender(); }
   setSelectionRange(start, end) { this.selection = { start, end }; this.requestRender(); }
   clearSelection() { this.selection = null; this.requestRender(); }
-  getSelection() {
-    if (!this.selection) return '';
-    const a = Math.min(this.selection.start, this.selection.end);
-    const b = Math.max(this.selection.start, this.selection.end);
+  getTextRange(start, end) {
+    const a = Math.min(start, end);
+    const b = Math.max(start, end);
     const visible = this.visibleLines();
     const out = [];
     for (let idx = a; idx <= b; idx++) {
@@ -383,6 +382,10 @@ class VirtualTerm {
       if (x === this.cols - 1 && idx < b) out.push('\n');
     }
     return out.join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]+$/g, '');
+  }
+  getSelection() {
+    if (!this.selection) return '';
+    return this.getTextRange(this.selection.start, this.selection.end);
   }
   installKeyboard() {
     this.textarea.addEventListener('keydown', ev => {
@@ -946,6 +949,26 @@ class XtermCompat {
   clearSelection() { this.term.clearSelection(); }
   setCompositionPreview(_) {}
   setSelectionRange(start, end) { const first = Math.min(start, end); this.term.select(first % this.cols, Math.floor(first / this.cols), Math.max(1, Math.abs(end - start) + 1)); }
+  getTextRange(start, end) {
+    try {
+      const first = Math.min(start, end);
+      const last = Math.max(start, end);
+      const buffer = this.term.buffer && this.term.buffer.active;
+      if (!buffer) return this.term.getSelection();
+      const viewportY = Number(buffer.viewportY || 0);
+      const rows = [];
+      const firstRow = Math.max(0, Math.floor(first / this.cols));
+      const lastRow = Math.min(this.rows - 1, Math.floor(last / this.cols));
+      for (let row = firstRow; row <= lastRow; row++) {
+        const rowStart = row * this.cols;
+        const from = row === firstRow ? first - rowStart : 0;
+        const to = row === lastRow ? last - rowStart : this.cols - 1;
+        const line = buffer.getLine(viewportY + row);
+        rows.push(line ? line.translateToString(false, from, to + 1) : '');
+      }
+      return rows.join('\n').replace(/[ \t]+\n/g, '\n').replace(/[ \t]+$/g, '');
+    } catch (_) { return this.term.getSelection(); }
+  }
   getSelection() { return this.term.getSelection(); }
 }
 
@@ -1286,7 +1309,15 @@ document.addEventListener('focusout', ev => {
 
 let longPressTimer = null, selectionStartPoint = null, pointerSelection = null, pointerScroll = null, selectionMode = null;
 function selectedPane() { return selectionMode && panes[selectionMode.pane] ? panes[selectionMode.pane] : active(); }
-function selectedText() { return selectedPane().term.getSelection(); }
+function selectedText() {
+  if (selectionMode && panes[selectionMode.pane]) {
+    const term = panes[selectionMode.pane].term;
+    const start = cellIndex(term, selectionMode.start);
+    const end = cellIndex(term, selectionMode.end);
+    if (term.getTextRange) return term.getTextRange(start, end);
+  }
+  return selectedPane().term.getSelection();
+}
 function clearNativeSelection() { try { const sel = window.getSelection && window.getSelection(); if (sel) sel.removeAllRanges(); } catch (_) {} }
 function preventNativeTerminalMenu(ev) {
   if (ev.target && ev.target.closest && ev.target.closest('#terms')) { ev.preventDefault(); ev.stopPropagation(); clearNativeSelection(); }
