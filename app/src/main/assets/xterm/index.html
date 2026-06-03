@@ -629,17 +629,23 @@ class VirtualTerm {
     const offset = Math.max(0, this.viewOffset || 0);
     const totalRows = this.scrollback.length + this.lines.length;
     const topLine = Math.max(0, totalRows - this.rows - offset);
-    return { atBottom:offset === 0, offset, topLine, rows:this.rows, totalRows };
+    const cursorLine = this.scrollback.length + this.y;
+    const cursorViewportRow = cursorLine - topLine;
+    const cursorInView = cursorViewportRow >= 0 && cursorViewportRow < this.rows;
+    return { atBottom:offset === 0, offset, topLine, rows:this.rows, totalRows, cursorLine, cursorViewportRow, cursorInView };
   }
   restoreViewState(state) {
     let offset = 0;
-    if (state && !state.atBottom) {
-      if (Number.isFinite(Number(state.topLine))) {
-        const totalRows = this.scrollback.length + this.lines.length;
-        offset = totalRows - this.rows - Math.max(0, Number(state.topLine) || 0);
-      } else {
-        offset = Number(state.offset) || 0;
+    const totalRows = this.scrollback.length + this.lines.length;
+    if (state) {
+      let targetTopLine = NaN;
+      if (state.cursorInView && Number.isFinite(Number(state.cursorLine)) && Number.isFinite(Number(state.cursorViewportRow))) {
+        targetTopLine = Number(state.cursorLine) - Number(state.cursorViewportRow);
+      } else if (!state.atBottom && Number.isFinite(Number(state.topLine))) {
+        targetTopLine = Number(state.topLine);
       }
+      if (Number.isFinite(targetTopLine)) offset = totalRows - this.rows - Math.max(0, targetTopLine);
+      else if (!state.atBottom) offset = Number(state.offset) || 0;
     }
     this.viewOffset = Math.max(0, Math.min(this.scrollback.length, Math.round(offset)));
     this.requestRender();
@@ -940,24 +946,35 @@ class XtermCompat {
       if (!buffer) return { atBottom:true, offset:0, topLine:0 };
       const baseY = Number(buffer.baseY || 0);
       const viewportY = Number(buffer.viewportY || 0);
+      const cursorY = Number(buffer.cursorY || 0);
+      const cursorLine = baseY + cursorY;
+      const cursorViewportRow = cursorLine - viewportY;
+      const cursorInView = cursorViewportRow >= 0 && cursorViewportRow < this.rows;
       const offset = Math.max(0, baseY - viewportY);
-      return { atBottom:offset === 0, offset, topLine:viewportY, rows:this.rows, totalRows:baseY + this.rows };
+      return { atBottom:offset === 0, offset, topLine:viewportY, rows:this.rows, totalRows:baseY + this.rows, cursorLine, cursorViewportRow, cursorInView };
     } catch (_) { return { atBottom:true, offset:0, topLine:0 }; }
   }
   restoreViewState(state) {
     try {
       const buffer = this.term.buffer && this.term.buffer.active;
-      if (!buffer || !state || state.atBottom) {
+      if (!buffer || !state) {
         if (this.term.scrollToBottom) this.term.scrollToBottom();
         else this.term.scrollLines(1000000);
         return;
       }
       const baseY = Number(buffer.baseY || 0);
       const viewportY = Number(buffer.viewportY || 0);
-      const targetFromTop = Number.isFinite(Number(state.topLine)) ? Number(state.topLine) : NaN;
-      const target = Number.isFinite(targetFromTop)
-        ? Math.max(0, Math.min(baseY, Math.round(targetFromTop)))
-        : Math.max(0, baseY - Math.max(0, Number(state.offset) || 0));
+      let target = NaN;
+      if (state.cursorInView && Number.isFinite(Number(state.cursorLine)) && Number.isFinite(Number(state.cursorViewportRow))) {
+        target = Number(state.cursorLine) - Number(state.cursorViewportRow);
+      } else if (!state.atBottom && Number.isFinite(Number(state.topLine))) {
+        target = Number(state.topLine);
+      } else if (!state.atBottom) {
+        target = baseY - Math.max(0, Number(state.offset) || 0);
+      } else {
+        target = baseY;
+      }
+      target = Math.max(0, Math.min(baseY, Math.round(target)));
       if (this.term.scrollToLine) this.term.scrollToLine(target);
       else this.term.scrollLines(target - viewportY);
     } catch (_) {}
