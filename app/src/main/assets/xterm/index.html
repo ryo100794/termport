@@ -59,7 +59,7 @@
 const enc = new TextEncoder();
 const statusEl = document.getElementById('status');
 const DEFAULT_FONT_SIZE = 13;
-const MIN_FONT_SIZE = 4;
+const MIN_FONT_SIZE = 3;
 const MAX_FONT_SIZE = 28;
 const DEFAULT_ROWS = 24;
 const DEFAULT_COLS = 80;
@@ -1431,15 +1431,14 @@ function applySelectionMode() {
 function beginSelectionDrag(paneIndex, pointerId, cell, host, keepAnchor) {
   selecting = true;
   selectionInputBlockUntil = Date.now() + SELECTION_ACTIVE_BLOCK_MS;
-  pointerSelection = { pane:paneIndex, pointerId, handle:'end' };
-  if (!selectionMode || selectionMode.pane !== paneIndex || !keepAnchor) selectionMode = { pane:paneIndex, start:cell, end:cell, dragging:true, dragHandle:'end' };
-  else { selectionMode.dragging = true; selectionMode.dragHandle = 'end'; selectionMode.end = cell; }
+  pointerSelection = null;
+  if (!selectionMode || selectionMode.pane !== paneIndex || !keepAnchor) selectionMode = { pane:paneIndex, start:cell, end:cell, dragging:false, dragHandle:null };
+  else { selectionMode.dragging = false; selectionMode.dragHandle = null; }
   pointerScroll = null;
   scrollTouch = null;
   clearNativeSelection();
   try { panes[paneIndex].term.textarea.blur(); } catch (_) {}
-  setStatus('Select: drag range, Copy/Clear to finish');
-  try { host.setPointerCapture(pointerId); } catch (_) {}
+  setStatus('Select: drag handles; drag terminal to scroll');
   applySelectionMode();
 }
 function finishSelectionDrag(paneIndex, ev) {
@@ -1502,13 +1501,17 @@ for (let i=0; i<panes.length; i++) {
   host.addEventListener('pointerdown', ev => {
     if (ev.pointerType === 'mouse' && ev.button !== 0) return;
     ev.preventDefault();
+    if (selectionMode && selectionMode.pane === i) {
+      activePane = i;
+      panes.forEach((_, n) => document.getElementById('pane' + n).classList.toggle('active', n === i));
+      pointerSelection = null;
+      selectionStartPoint = null;
+      pointerScroll = { pane:i, pointerId:ev.pointerId, x:ev.clientX, y:ev.clientY, startX:ev.clientX, startY:ev.clientY, active:false, swiped:false };
+      return;
+    }
     setActivePane(i);
     selectionStartPoint = { clientX:ev.clientX, clientY:ev.clientY };
     const startCell = cellFromPoint(panes[i].term, ev);
-    if (selectionMode && selectionMode.pane === i) {
-      beginSelectionDrag(i, ev.pointerId, startCell, host, true);
-      return;
-    }
     if (longPressTimer) clearTimeout(longPressTimer);
     pointerSelection = { pane:i, pointerId:ev.pointerId };
     pointerScroll = { pane:i, pointerId:ev.pointerId, x:ev.clientX, y:ev.clientY, startX:ev.clientX, startY:ev.clientY, active:false, swiped:false };
@@ -1520,7 +1523,7 @@ for (let i=0; i<panes.length; i++) {
     setTimeout(() => { if (!selectionMode && !pointerScroll && activePane === i) refocusActiveSoon(); }, LONG_PRESS_MS + 40);
   }, { passive:false });
   host.addEventListener('pointermove', ev => {
-    if (selectionMode && selectionMode.dragging && pointerSelection && pointerSelection.pane === i && ev.pointerId === pointerSelection.pointerId) {
+    if (selectionMode && selectionMode.dragging && selectionMode.dragHandle && pointerSelection && pointerSelection.pane === i && ev.pointerId === pointerSelection.pointerId) {
       ev.preventDefault();
       ev.stopPropagation();
       const cell = cellFromPoint(panes[i].term, ev);
@@ -1528,7 +1531,7 @@ for (let i=0; i<panes.length; i++) {
       applySelectionMode();
       return;
     }
-    if (pointerScroll && pointerScroll.pane === i && ev.pointerId === pointerScroll.pointerId && !selectionMode) {
+    if (pointerScroll && pointerScroll.pane === i && ev.pointerId === pointerScroll.pointerId && !(selectionMode && selectionMode.dragging)) {
       const dx = ev.clientX - pointerScroll.startX;
       const dyTotal = ev.clientY - pointerScroll.startY;
       if (!pointerScroll.swiped && Math.abs(dx) > SWIPE_SESSION_THRESHOLD_PX && Math.abs(dx) > Math.abs(dyTotal) * 1.35) {
@@ -1545,7 +1548,7 @@ for (let i=0; i<panes.length; i++) {
         pointerSelection = null;
         pointerScroll.active = true;
         const t = panes[i].term;
-        if (t.scrollView) { const lines = scrollLinesForDelta(t, dy); t.scrollView(dy > 0 ? lines : -lines); rememberPaneView(i); }
+        if (t.scrollView) { const lines = scrollLinesForDelta(t, dy); t.scrollView(dy > 0 ? lines : -lines); rememberPaneView(i); if (selectionMode && selectionMode.pane === i) applySelectionMode(); }
         pointerScroll.y = ev.clientY;
         return;
       }
@@ -1569,19 +1572,11 @@ let scrollTouch = null;
 document.getElementById('terms').addEventListener('touchstart', ev => {
   if (ev.touches.length !== 1) return;
   const pane = paneIndexFromTarget(ev.target);
-  if (selectionMode && selectionMode.pane === pane) {
-    selectionMode.dragging = true;
-    selectionMode.dragHandle = 'end';
-    selectionMode.end = cellFromPoint(panes[pane].term, ev.touches[0]);
-    pointerScroll = null;
-    applySelectionMode();
-    ev.preventDefault();
-    return;
-  }
-  if (!selectionMode) scrollTouch = { x: ev.touches[0].clientX, y: ev.touches[0].clientY, startX: ev.touches[0].clientX, startY: ev.touches[0].clientY, pane, swiped:false };
+  if (selectionMode && selectionMode.dragging) return;
+  scrollTouch = { x: ev.touches[0].clientX, y: ev.touches[0].clientY, startX: ev.touches[0].clientX, startY: ev.touches[0].clientY, pane, swiped:false };
 }, { passive:false });
 document.getElementById('terms').addEventListener('touchmove', ev => {
-  if (selectionMode && selectionMode.dragging && ev.touches.length === 1) {
+  if (selectionMode && selectionMode.dragging && selectionMode.dragHandle && ev.touches.length === 1) {
     const pane = selectionMode.pane;
     const cell = cellFromPoint(panes[pane].term, ev.touches[0]);
     if (selectionMode.dragHandle === 'start') selectionMode.start = cell; else selectionMode.end = cell;
@@ -1589,7 +1584,7 @@ document.getElementById('terms').addEventListener('touchmove', ev => {
     ev.preventDefault();
     return;
   }
-  if (!scrollTouch || selectionMode || ev.touches.length !== 1) return;
+  if (!scrollTouch || (selectionMode && selectionMode.dragging) || ev.touches.length !== 1) return;
   const touch = ev.touches[0];
   const dx = touch.clientX - scrollTouch.startX;
   const dyTotal = touch.clientY - scrollTouch.startY;
@@ -1605,7 +1600,7 @@ document.getElementById('terms').addEventListener('touchmove', ev => {
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
     pointerSelection = null; pointerScroll = null; selectionStartPoint = null;
     const t = panes[scrollTouch.pane].term;
-    if (t.scrollView) { ev.preventDefault(); const lines = scrollLinesForDelta(t, dy); t.scrollView(dy > 0 ? lines : -lines); rememberPaneView(scrollTouch.pane); scrollTouch.y = touch.clientY; }
+    if (t.scrollView) { ev.preventDefault(); const lines = scrollLinesForDelta(t, dy); t.scrollView(dy > 0 ? lines : -lines); rememberPaneView(scrollTouch.pane); if (selectionMode && selectionMode.pane === scrollTouch.pane) applySelectionMode(); scrollTouch.y = touch.clientY; }
   }
 }, { passive:false });
 document.getElementById('terms').addEventListener('touchend', () => {
