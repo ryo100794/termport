@@ -625,10 +625,23 @@ class VirtualTerm {
     this.viewOffset = Math.max(0, Math.min(max, this.viewOffset + delta));
     this.requestRender();
   }
-  getViewState() { return { atBottom:this.viewOffset === 0, offset:Math.max(0, this.viewOffset || 0) }; }
+  getViewState() {
+    const offset = Math.max(0, this.viewOffset || 0);
+    const totalRows = this.scrollback.length + this.lines.length;
+    const topLine = Math.max(0, totalRows - this.rows - offset);
+    return { atBottom:offset === 0, offset, topLine, rows:this.rows, totalRows };
+  }
   restoreViewState(state) {
-    const offset = state && !state.atBottom ? Math.max(0, Number(state.offset) || 0) : 0;
-    this.viewOffset = Math.max(0, Math.min(this.scrollback.length, offset));
+    let offset = 0;
+    if (state && !state.atBottom) {
+      if (Number.isFinite(Number(state.topLine))) {
+        const totalRows = this.scrollback.length + this.lines.length;
+        offset = totalRows - this.rows - Math.max(0, Number(state.topLine) || 0);
+      } else {
+        offset = Number(state.offset) || 0;
+      }
+    }
+    this.viewOffset = Math.max(0, Math.min(this.scrollback.length, Math.round(offset)));
     this.requestRender();
   }
   visibleLines() {
@@ -924,10 +937,12 @@ class XtermCompat {
   getViewState() {
     try {
       const buffer = this.term.buffer && this.term.buffer.active;
-      if (!buffer) return { atBottom:true, offset:0 };
-      const offset = Math.max(0, Number(buffer.baseY || 0) - Number(buffer.viewportY || 0));
-      return { atBottom:offset === 0, offset };
-    } catch (_) { return { atBottom:true, offset:0 }; }
+      if (!buffer) return { atBottom:true, offset:0, topLine:0 };
+      const baseY = Number(buffer.baseY || 0);
+      const viewportY = Number(buffer.viewportY || 0);
+      const offset = Math.max(0, baseY - viewportY);
+      return { atBottom:offset === 0, offset, topLine:viewportY, rows:this.rows, totalRows:baseY + this.rows };
+    } catch (_) { return { atBottom:true, offset:0, topLine:0 }; }
   }
   restoreViewState(state) {
     try {
@@ -939,7 +954,10 @@ class XtermCompat {
       }
       const baseY = Number(buffer.baseY || 0);
       const viewportY = Number(buffer.viewportY || 0);
-      const target = Math.max(0, baseY - Math.max(0, Number(state.offset) || 0));
+      const targetFromTop = Number.isFinite(Number(state.topLine)) ? Number(state.topLine) : NaN;
+      const target = Number.isFinite(targetFromTop)
+        ? Math.max(0, Math.min(baseY, Math.round(targetFromTop)))
+        : Math.max(0, baseY - Math.max(0, Number(state.offset) || 0));
       if (this.term.scrollToLine) this.term.scrollToLine(target);
       else this.term.scrollLines(target - viewportY);
     } catch (_) {}
@@ -1147,6 +1165,8 @@ function scheduleWindowFit() {
   const nextHeight = viewportHeight();
   const delta = Math.abs(nextHeight - lastViewportHeight);
   lastViewportHeight = nextHeight;
+  rememberVisiblePaneViews();
+  saveLayout();
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     resizeTimer = null;
