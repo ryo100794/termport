@@ -8,7 +8,6 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
@@ -168,7 +167,7 @@ public class MainActivity extends Activity {
                 + reason + "\r\n\r\n"
                 + "In Termux, run this once:\r\n"
                 + TERMUX_SETUP_COMMAND + "\r\n\r\n"
-                + "If auto-start cannot continue, tap Setup, paste in Termux, then restart TermPort.\r\n");
+                + "If auto-start cannot continue, run the command in Termux, then restart TermPort.\r\n");
     }
 
     @Override
@@ -875,34 +874,6 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void connectSession(int session) {
             MainActivity.this.connectSession(session);
-        }
-
-        @JavascriptInterface
-        public void copyTermuxSetup() {
-            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("TermPort setup", TERMUX_SETUP_COMMAND));
-            setStatus("Setup command copied");
-        }
-
-        @JavascriptInterface
-        public void openTermux() {
-            try {
-                Intent launch = getPackageManager().getLaunchIntentForPackage(TERMUX_PACKAGE);
-                if (launch != null) {
-                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(launch);
-                } else {
-                    Intent view = new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + TERMUX_PACKAGE));
-                    startActivity(view);
-                }
-            } catch (Exception e) {
-                setStatus("Could not open Termux");
-            }
-        }
-
-        @JavascriptInterface
-        public String termuxSetupCommand() {
-            return TERMUX_SETUP_COMMAND;
         }
 
         @JavascriptInterface

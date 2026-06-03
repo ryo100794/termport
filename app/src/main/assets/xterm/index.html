@@ -43,7 +43,7 @@
 </style>
 </head>
 <body class="single">
-  <div id="top"><div id="status">starting</div><button id="mode">Buffer</button><button id="split">Split</button><button id="copySel">Copy</button><button id="clearSel">Clear</button><button id="redraw">Redraw</button><button id="setup">Setup</button><button id="skydnir">Docker</button><button id="connect">Connect</button></div>
+  <div id="top"><div id="status">starting</div><button id="split">Split</button><button id="copySel">Copy</button><button id="redraw">Redraw</button><button id="skydnir">Docker</button><button id="connect">Connect</button></div>
   <div id="sessions"></div>
   <div id="dockerBar"></div>
   <div id="terms">
@@ -99,9 +99,9 @@ const scrollbackStoragePrefix = 'imeConsoleScrollbackV1:';
 const sessionViewStates = {};
 let viewStateSaveTimer = null;
 const sessionResizeState = Array.from({ length:SESSION_COUNT }, () => ({ rows:-1, cols:-1 }));
-function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split:splitCount > 1, splitCount, activePane, fontSize, rendererMode, sessions: panes.map(p => p.session), viewStates: sessionViewStates })); } catch (_) {} }
+function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split:splitCount > 1, splitCount, activePane, fontSize, sessions: panes.map(p => p.session), viewStates: sessionViewStates })); } catch (_) {} }
 function loadLayout() { try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (_) { return {}; } }
-let rendererMode = loadLayout().rendererMode === 'buffer' ? 'buffer' : 'safe';
+const rendererMode = 'safe';
 function clampFontSize(value) { return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(value * 10) / 10)); }
 function toB64(bytes) { let s=''; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); }
 function fromB64(b64) { const s=atob(b64); const out=new Uint8Array(s.length); for(let i=0;i<s.length;i++) out[i]=s.charCodeAt(i); return out; }
@@ -1111,8 +1111,9 @@ function refocusActiveSoon() { setTimeout(() => { try { active().term.focus(); }
 function clearActiveSelection() { try { active().term.clearSelection(); } catch (_) {} }
 function selectionDragActive() { return !!(selectionMode && selectionMode.dragging); }
 function prepareTerminalInput(refocus=false) {
-  if (selectionDragActive() || Date.now() < selectionInputBlockUntil) return false;
-  if (selecting || selectionMode) exitSelectionMode(refocus);
+  if (selectionDragActive()) return false;
+  if (selecting || selectionMode) { exitSelectionMode(refocus); return true; }
+  if (Date.now() < selectionInputBlockUntil) return false;
   return true;
 }
 function sendText(text) { if (!text || !prepareTerminalInput(false)) return; clearActiveSelection(); Android.writeBase64(active().session, toB64(enc.encode(text))); }
@@ -1429,7 +1430,6 @@ function exitSelectionMode(refocus=true) {
   if (refocus) try { active().term.focus(); } catch (_) {}
 }
 function copySelection() { const text = selectedText(); if (text) Android.copyText(text); exitSelectionMode(true); }
-function clearSelection() { exitSelectionMode(true); }
 function cellFromPoint(term, point) {
   term.canvas = term.canvas || term.element.querySelector('.xterm-screen canvas') || term.element;
   const rect = term.canvas.getBoundingClientRect();
@@ -1652,7 +1652,6 @@ document.getElementById('terms').addEventListener('touchend', () => {
   }
 }, { passive:true });
 document.getElementById('copySel').onclick = copySelection;
-document.getElementById('clearSel').onclick = clearSelection;
 
 const mods = { ctrl:false, alt:false, esc:false };
 function setMod(name) { mods[name] = !mods[name]; refreshModButtons(); active().term.focus(); }
@@ -1733,9 +1732,6 @@ const sessions = document.getElementById('sessions');
 function refreshSessions() { for (const [i,b] of [...sessions.children].entries()) b.classList.toggle('active', i === active().session); }
 for (let i=0; i<SESSION_COUNT; i++) { const b=document.createElement('button'); b.textContent='S'+(i+1); b.onclick=()=>switchPaneSession(activePane, i, true); sessions.appendChild(b); }
 refreshSessions();
-function refreshModeButton() { const b = document.getElementById('mode'); b.textContent = rendererMode === 'safe' ? 'Xterm' : 'Buffer'; b.classList.toggle('active', rendererMode === 'buffer'); }
-document.getElementById('mode').onclick = () => { rendererMode = rendererMode === 'safe' ? 'buffer' : 'safe'; saveLayout(); location.reload(); };
-refreshModeButton();
 function refreshSplitButton() {
   const b = document.getElementById('split');
   b.textContent = splitCount === 4 ? 'Split 4' : splitCount === 2 ? 'Split 2' : 'Split 1';
@@ -1761,18 +1757,12 @@ function nextSplitCount() { return splitCount === 1 ? 2 : splitCount === 2 ? 4 :
 document.getElementById('split').onclick = () => applySplitState(nextSplitCount(), true);
 document.getElementById('redraw').onclick = () => { try { active().term.refresh(); } catch (_) {} relayout('redraw'); };
 document.getElementById('connect').onclick = () => Android.connectSession(active().session);
-document.getElementById('setup').onclick = () => {
-  try { Android.copyTermuxSetup(); } catch (_) {}
-  try { Android.openTermux(); } catch (_) {}
-};
 document.getElementById('skydnir').onclick = () => { if (dockerBarOpen) setDockerBarOpen(false); else requestDockerContainers(); };
 setTimeout(() => {
   const saved = loadLayout();
   if (typeof saved.splitCount === 'number') splitCount = saved.splitCount;
   else if (typeof saved.split === 'boolean') splitCount = saved.split ? 2 : 1;
   split = splitCount > 1;
-  if (saved.rendererMode === 'safe' || saved.rendererMode === 'buffer') rendererMode = saved.rendererMode;
-  refreshModeButton();
   if (typeof saved.fontSize === 'number') fontSize = clampFontSize(saved.fontSize);
   if (saved.viewStates && typeof saved.viewStates === 'object') Object.assign(sessionViewStates, saved.viewStates);
   applySplitState(splitCount, false);
