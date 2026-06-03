@@ -85,6 +85,7 @@ const XTERM_TRANSCRIPT_LIMIT = 1024 * 1024;
 const SESSION_COUNT = 8;
 const HIDDEN_SESSION_BACKLOG_LIMIT = 1024 * 1024;
 const YES_PROCEED_TEXT = 'Yes, proceed';
+const AUTO_YES_ENTER_DELAY_MS = 5000;
 const TERMINAL_FONT_FAMILY = '"Droid Sans Mono","Roboto Mono","Noto Sans Mono CJK JP",monospace';
 const TERMINAL_LINE_HEIGHT = 1.2;
 let fontSize = DEFAULT_FONT_SIZE;
@@ -1034,6 +1035,7 @@ const sessionDecoders = Array.from({ length:SESSION_COUNT }, () => new TextDecod
 const hiddenSessionBacklog = Array.from({ length:SESSION_COUNT }, () => '');
 const sessionReplayText = Array.from({ length:SESSION_COUNT }, () => '');
 const yesProceedTails = Array.from({ length:SESSION_COUNT }, () => '');
+const autoYesTimers = Array.from({ length:SESSION_COUNT }, () => null);
 for (const p of panes) { p.pending = ''; p.writeScheduled = false; p.lastActiveAt = 0; }
 function normalizeSessionId(session) { return Math.max(0, Math.min(SESSION_COUNT - 1, Number(session) || 0)); }
 function appendSessionReplay(session, text) {
@@ -1093,6 +1095,7 @@ function focusSessionForPrompt(session) {
     setActivePane(paneIndex);
   }
   setStatus(`S${s + 1} needs confirmation`);
+  scheduleAutoYesEnter(s);
 }
 function inspectYesProceedOutput(session, text) {
   if (!autoYesProceed || !text) return;
@@ -1100,6 +1103,24 @@ function inspectYesProceedOutput(session, text) {
   const scan = (yesProceedTails[s] || '') + text;
   if (scan.includes(YES_PROCEED_TEXT)) focusSessionForPrompt(s);
   yesProceedTails[s] = scan.slice(-Math.max(0, YES_PROCEED_TEXT.length - 1));
+}
+function clearAutoYesTimer(session) {
+  const s = normalizeSessionId(session);
+  if (!autoYesTimers[s]) return;
+  clearTimeout(autoYesTimers[s]);
+  autoYesTimers[s] = null;
+}
+function clearAllAutoYesTimers() {
+  for (let i=0; i<autoYesTimers.length; i++) clearAutoYesTimer(i);
+}
+function scheduleAutoYesEnter(session) {
+  const s = normalizeSessionId(session);
+  clearAutoYesTimer(s);
+  autoYesTimers[s] = setTimeout(() => {
+    autoYesTimers[s] = null;
+    writeSessionText(s, '\r', false);
+    setStatus(`S${s + 1} auto enter`);
+  }, AUTO_YES_ENTER_DELAY_MS);
 }
 function paneViewSnapshot(index) {
   const p = panes[index];
@@ -1151,7 +1172,13 @@ function prepareTerminalInput(refocus=false) {
   if (Date.now() < selectionInputBlockUntil) return false;
   return true;
 }
-function sendText(text) { if (!text || !prepareTerminalInput(false)) return; clearActiveSelection(); Android.writeBase64(active().session, toB64(enc.encode(text))); }
+function writeSessionText(session, text, userInput=false) {
+  if (!text) return;
+  const s = normalizeSessionId(session);
+  if (userInput) clearAutoYesTimer(s);
+  Android.writeBase64(s, toB64(enc.encode(text)));
+}
+function sendText(text) { if (!text || !prepareTerminalInput(false)) return; clearActiveSelection(); writeSessionText(active().session, text, true); }
 function paneGeometry(index) {
   const p = panes[normalizePaneIndex(index)];
   return { rows:Math.max(2, p.term.rows), cols:Math.max(2, p.term.cols) };
@@ -1310,7 +1337,7 @@ function installDirectImeFlush(term, paneIndex) {
     setPreview('');
     setActivePane(paneIndex);
     try { term.clearSelection(); } catch (_) {}
-    if (mods.ctrl || mods.alt || mods.esc) sendKey(text); else Android.writeBase64(panes[paneIndex].session, toB64(enc.encode(text)));
+    if (mods.ctrl || mods.alt || mods.esc) sendKey(text); else writeSessionText(panes[paneIndex].session, text, true);
     imeSuppressText = text; imeSuppressUntil = Date.now() + IME_SUPPRESS_MS;
     return true;
   };
@@ -1776,7 +1803,7 @@ function refreshAutoYesButton() {
   if (!b) return;
   b.classList.toggle('active', !!autoYesProceed);
 }
-document.getElementById('autoYes').onclick = () => { autoYesProceed = !autoYesProceed; refreshAutoYesButton(); saveLayout(); setStatus(autoYesProceed ? 'Auto Yes on' : 'Auto Yes off'); };
+document.getElementById('autoYes').onclick = () => { autoYesProceed = !autoYesProceed; if (!autoYesProceed) clearAllAutoYesTimers(); refreshAutoYesButton(); saveLayout(); setStatus(autoYesProceed ? 'Auto Yes on' : 'Auto Yes off'); };
 function refreshSplitButton() {
   const b = document.getElementById('split');
   b.textContent = splitCount === 4 ? 'Split 4' : splitCount === 2 ? 'Split 2' : 'Split 1';
