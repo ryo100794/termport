@@ -1,0 +1,11 @@
+services:
+  termport:
+    build: .
+    image: termport-local:latest
+    container_name: termport-local
+    working_dir: /workspace
+    environment:
+      HOME: /root
+      TERM: xterm-256color
+    volumes:
+      - ./home:/root

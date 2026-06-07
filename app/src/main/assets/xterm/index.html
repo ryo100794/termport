@@ -10,16 +10,20 @@
   #top { display:flex; gap:6px; align-items:center; padding:6px 8px; background:#181b1f; color:#f1f3f4; font-size:13px; }
   #status { flex:1 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #sessions, #dockerBar { display:flex; gap:4px; overflow-x:auto; padding:5px 6px; background:#111418; scrollbar-width:none; }
-  #keys { display:grid; grid-auto-flow:column; grid-template-rows:repeat(2,28px); grid-auto-columns:max-content; gap:3px; overflow-x:auto; padding:4px 6px; background:#111418; scrollbar-width:none; }
+  #keys { flex:0 0 auto; display:grid; grid-auto-flow:column; grid-template-rows:repeat(2,28px); grid-auto-columns:max-content; gap:3px; overflow-x:auto; padding:4px 6px; background:#111418; scrollbar-width:none; }
   #sessions::-webkit-scrollbar, #dockerBar::-webkit-scrollbar, #keys::-webkit-scrollbar { display:none; }
   #terms { flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; background:#050505; overflow:hidden; }
   .pane { flex:1 1 0; min-width:0; min-height:0; overflow:hidden; display:flex; flex-direction:column; border-top:1px solid #293039; box-sizing:border-box; }
   .pane:first-child { border-top:0; }
-  .pane.active .paneTitle { background:#0e5f9d; }
-  .paneTitle { flex:0 0 auto; height:3px; padding:0; overflow:hidden; background:#15181c; color:transparent; font-size:0; line-height:0; }
+  .pane.active .paneTitle { background:#0e5f9d; border-color:#58a6ff; color:#fff; }
+  .paneTitle { flex:0 0 auto; height:16px; padding:0 6px; overflow:hidden; background:#15181c; color:#b8c0cc; font:10px/15px system-ui,sans-serif; white-space:nowrap; text-overflow:ellipsis; border-bottom:1px solid #293039; box-sizing:border-box; }
+  .paneActions { display:none; flex:0 0 auto; gap:4px; overflow-x:auto; padding:3px 5px; background:#10151b; border-bottom:1px solid #293039; scrollbar-width:none; }
+  .paneActions::-webkit-scrollbar { display:none; }
+  body.skydnirActions .pane.skydnirMenuPane .paneActions { display:flex; }
   .term { flex:1 1 auto; min-width:0; min-height:0; width:100%; height:100%; overflow:hidden; background:#050505; touch-action:none; position:relative; box-sizing:border-box; }
   .term canvas { display:block; background:#050505; }
   .term .xterm { width:100%; height:100%; padding:0; }
+  .term.restoring .xterm { visibility:hidden; }
   .term .xterm-viewport { overflow:hidden !important; }
   .term textarea { position:absolute; left:0; top:0; width:100%; height:100%; opacity:.01; border:0; padding:0; resize:none; color:transparent; background:transparent; caret-color:transparent; outline:0; z-index:1; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
   .selectionOverlay { position:absolute; inset:0; z-index:3; pointer-events:none; overflow:hidden; }
@@ -33,24 +37,81 @@
   body.split4 #pane0, body.split4 #pane2 { border-left:0; }
   button { flex:0 0 auto; min-width:32px; height:28px; padding:0 6px; border:1px solid #3a3a3a; border-radius:5px; background:#23272d; color:#eee; font:10.5px system-ui,sans-serif; white-space:nowrap; }
   button.active { background:#0e5f9d; border-color:#58a6ff; }
+  #sessions button.sessionHidden { color:#7f8790; border-color:#252b32; background:#171b20; }
+  #sessions button.sessionHidden.sessionFlash { color:#f1f3f4; border-color:#f2cc60; background:#4a3a15; }
   button:active { background:#444; }
   button:disabled, button.disabled { opacity:.55; color:#9aa0a6; border-color:#2d333b; background:#1c2026; }
   .keySpacer { width:32px; height:28px; }
   .keyGap { width:8px; height:28px; }
   #dockerBar { display:none; position:fixed; left:0; right:0; bottom:36px; z-index:30; max-height:74px; background:#15191e; box-shadow:0 -2px 10px rgba(0,0,0,.45); }
   #dockerBar.open { display:flex; }
+  #skydnirEditor { display:none; position:fixed; inset:52px 8px 42px; z-index:50; background:#11161c; border:1px solid #3b4552; box-shadow:0 4px 24px rgba(0,0,0,.55); color:#e7edf4; flex-direction:column; min-height:0; }
+  #skydnirEditor.open { display:flex; }
+  #skydnirEditor .editorTop { flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:6px 7px; border-bottom:1px solid #2b333d; background:#171d24; }
+  #skydnirEditor .editorTitle { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font:12px system-ui,sans-serif; }
+  #skydnirEditor .editorBody { flex:1 1 auto; min-height:0; display:grid; grid-template-rows:minmax(0,1fr) minmax(0,1fr); gap:6px; padding:7px; }
+  #skydnirEditor label { display:flex; flex-direction:column; min-height:0; gap:3px; font:11px system-ui,sans-serif; color:#c8d1dc; }
+  #skydnirEditor textarea { flex:1 1 auto; min-height:0; resize:none; border:1px solid #303946; background:#06080a; color:#e8edf2; padding:6px; font:11px ui-monospace, SFMono-Regular, Consolas, monospace; outline:0; }
+  #skydnirImagesPanel { display:none; position:fixed; inset:52px 8px 42px; z-index:51; background:#11161c; border:1px solid #3b4552; box-shadow:0 4px 24px rgba(0,0,0,.55); color:#e7edf4; flex-direction:column; min-height:0; }
+  #skydnirImagesPanel.open { display:flex; }
+  #skydnirImagesPanel .panelTop { flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:6px 7px; border-bottom:1px solid #2b333d; background:#171d24; }
+  #skydnirImagesPanel .panelTitle { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font:12px system-ui,sans-serif; }
+  #skydnirImagesBody { flex:1 1 auto; min-height:0; overflow:auto; padding:8px; scrollbar-width:none; }
+  #skydnirImagesBody::-webkit-scrollbar { display:none; }
+  .imageSection { margin:0 0 10px; border-top:1px solid #26313c; padding-top:7px; }
+  .imageSection:first-child { border-top:0; padding-top:0; }
+  .imageSectionTitle { font:11px system-ui,sans-serif; color:#c8d1dc; margin:0 0 6px; }
+  .imageActions, .imageLegend, .imageRowActions { display:flex; gap:5px; overflow-x:auto; scrollbar-width:none; }
+  .imageActions::-webkit-scrollbar, .imageLegend::-webkit-scrollbar, .imageRowActions::-webkit-scrollbar { display:none; }
+  .imagePullForm { flex:0 0 auto; display:flex; gap:5px; align-items:center; min-width:260px; }
+  .imagePullInput { flex:1 1 190px; min-width:150px; height:28px; box-sizing:border-box; border:1px solid #303946; background:#06080a; color:#e8edf2; padding:0 6px; font:11px ui-monospace, SFMono-Regular, Consolas, monospace; outline:0; }
+  .imageWidgetGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+  .imageWidget { border:1px solid #303946; background:#0d1218; padding:7px; min-width:0; }
+  .imageWidgetTitle { font:10px system-ui,sans-serif; color:#9faab8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .imageWidgetValue { font:12px system-ui,sans-serif; color:#f0f4f8; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .imageWidgetDetail, .imageMessage, .imageRowDetail { font:10.5px/1.35 system-ui,sans-serif; color:#aeb8c4; margin-top:3px; white-space:pre-line; }
+  .imageGraph { min-width:max-content; }
+  .imageRow { display:flex; align-items:flex-start; gap:7px; min-height:46px; padding:6px 0; }
+  .imageRowIndent { flex:0 0 auto; width:0; height:1px; }
+  .imageKind { flex:0 0 auto; min-width:44px; padding:3px 6px; border-radius:5px; font:10px system-ui,sans-serif; text-align:center; border:1px solid currentColor; }
+  .imageKind.image { color:#7ee787; background:#102218; }
+  .imageKind.cache { color:#d29922; background:#251d0d; }
+  .imageKind.compose, .imageKind.container { color:#79c0ff; background:#0c1d2f; }
+  .imageRowMain { min-width:0; width:360px; max-width:72vw; }
+  .imageRowTitle { font:12px system-ui,sans-serif; color:#edf2f7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .imageRow.image .imageRowTitle { font-weight:600; }
+  .imagePathBar { display:flex; align-items:center; gap:6px; min-width:0; margin:0 0 7px; }
+  .imagePath { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:11px ui-monospace, SFMono-Regular, Consolas, monospace; color:#c8d1dc; border:1px solid #303946; background:#090d12; padding:5px 6px; }
+  .imageFileList { border-top:1px solid #26313c; min-width:max-content; }
+  .imageFileRow { display:grid; grid-template-columns:72px minmax(220px, 1fr) 90px; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #1e2630; }
+  .imageFileType { font:10px system-ui,sans-serif; color:#9faab8; }
+  .imageFileName { font:12px system-ui,sans-serif; color:#edf2f7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .imageFileDetail { font:10.5px system-ui,sans-serif; color:#aeb8c4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .imageFilePreview { border:1px solid #303946; background:#06080a; color:#e8edf2; padding:7px; margin-top:7px; font:11px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace; white-space:pre-wrap; overflow:auto; max-height:46vh; }
+  @media (max-width:520px) { #skydnirImagesPanel { inset:46px 4px 38px; } .imageWidgetGrid { grid-template-columns:1fr; } .imageRowMain { width:260px; max-width:68vw; } .imageFileRow { grid-template-columns:54px minmax(160px,1fr) 72px; } }
   #terms, .term { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 </style>
 </head>
 <body class="single">
-  <div id="top"><div id="status">starting</div><button id="autoYes">Auto Yes</button><button id="split">Split</button><button id="copySel">Copy</button><button id="redraw">Redraw</button><button id="skydnir">Docker</button><button id="connect">Connect</button></div>
+  <div id="top"><div id="status">starting</div><button id="autoYes">Auto Yes</button><button id="split">Split</button><button id="copySel">Copy</button><button id="redraw">Redraw</button><button id="skydnir">Skydnir</button><button id="connect">Termux</button></div>
   <div id="sessions"></div>
   <div id="dockerBar"></div>
   <div id="terms">
-    <div class="pane active" id="pane0"><div class="paneTitle">S1</div><div class="term" id="term0"></div></div>
-    <div class="pane" id="pane1"><div class="paneTitle">S2</div><div class="term" id="term1"></div></div>
-    <div class="pane" id="pane2"><div class="paneTitle">S3</div><div class="term" id="term2"></div></div>
-    <div class="pane" id="pane3"><div class="paneTitle">S4</div><div class="term" id="term3"></div></div>
+    <div class="pane active" id="pane0"><div class="paneTitle">S1 Termux 127.0.0.1:8765 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term0"></div></div>
+    <div class="pane" id="pane1"><div class="paneTitle">S2 Termux 127.0.0.1:8766 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term1"></div></div>
+    <div class="pane" id="pane2"><div class="paneTitle">S3 Termux 127.0.0.1:8767 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term2"></div></div>
+    <div class="pane" id="pane3"><div class="paneTitle">S4 Termux 127.0.0.1:8768 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term3"></div></div>
+  </div>
+  <div id="skydnirEditor">
+    <div class="editorTop"><div class="editorTitle">Skydnir Project</div><button id="skydnirEditorSave">Save</button><button id="skydnirEditorClose">Cancel</button></div>
+    <div class="editorBody">
+      <label>compose.yaml<textarea id="skydnirCompose" spellcheck="false"></textarea></label>
+      <label>Dockerfile<textarea id="skydnirDockerfile" spellcheck="false"></textarea></label>
+    </div>
+  </div>
+  <div id="skydnirImagesPanel" aria-live="polite">
+    <div class="panelTop"><div class="panelTitle">Skydnir Images</div><button id="skydnirImagesRefresh">Refresh</button><button id="skydnirImagesClose">Close</button></div>
+    <div id="skydnirImagesBody"></div>
   </div>
   <div id="keys"></div>
 <script src="xterm.js"></script>
@@ -84,12 +145,15 @@ const XTERM_SCROLLBACK = 20000;
 const XTERM_TRANSCRIPT_LIMIT = 1024 * 1024;
 const SESSION_COUNT = 8;
 const HIDDEN_SESSION_BACKLOG_LIMIT = 1024 * 1024;
+const TERMUX_HOST = '127.0.0.1';
+const TERMUX_BASE_PORT = 8765;
 const YES_PROCEED_TEXT = 'Yes, proceed';
 const AUTO_YES_ENTER_DELAY_MS = 5000;
 const TERMINAL_FONT_FAMILY = '"Droid Sans Mono","Roboto Mono","Noto Sans Mono CJK JP",monospace';
 const TERMINAL_LINE_HEIGHT = 1.2;
 let fontSize = DEFAULT_FONT_SIZE;
 let activePane = 0;
+let skydnirActionsPane = -1;
 let split = false;
 let splitCount = 1;
 let selecting = false;
@@ -101,14 +165,19 @@ const storageKey = 'termPortLayoutV3';
 const scrollbackStoragePrefix = 'imeConsoleScrollbackV1:';
 const sessionViewStates = {};
 let viewStateSaveTimer = null;
+let sessionTitleStatusReady = false;
+let terminalRefocusSuppressedUntil = 0;
+let softKeyboardVisible = false;
+let specialKeyKeepImeUntil = 0;
+let restoringInitialLayout = false;
 const sessionResizeState = Array.from({ length:SESSION_COUNT }, () => ({ rows:-1, cols:-1 }));
-function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split:splitCount > 1, splitCount, activePane, fontSize, autoYesProceed, sessions: panes.map(p => p.session), viewStates: sessionViewStates })); } catch (_) {} }
+function saveLayout() { try { localStorage.setItem(storageKey, JSON.stringify({ split:splitCount > 1, splitCount, activePane, fontSize, autoYesProceed, sessions: panes.map(p => p.session) })); } catch (_) {} }
 function loadLayout() { try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (_) { return {}; } }
 const rendererMode = 'safe';
 function clampFontSize(value) { return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(value * 10) / 10)); }
 function toB64(bytes) { let s=''; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); }
 function fromB64(b64) { const s=atob(b64); const out=new Uint8Array(s.length); for(let i=0;i<s.length;i++) out[i]=s.charCodeAt(i); return out; }
-function setStatus(text) { statusEl.textContent = text; }
+function setStatus(text) { statusEl.textContent = text; if (sessionTitleStatusReady) noteBridgeStatus(text); }
 window.setBridgeStatus = setStatus;
 
 const palette = {
@@ -222,6 +291,8 @@ class VirtualTerm {
     } catch (_) {}
     try { localStorage.setItem(scrollbackStoragePrefix + this.persistKey, json); } catch (_) {}
   }
+  beginRestore() { this.restoring = true; this.host.classList.add('restoring'); }
+  endRestore() { this.restoring = false; this.host.classList.remove('restoring'); this.refresh(); }
   restorePersisted() {
     if (!this.persistKey) return;
     try {
@@ -296,16 +367,16 @@ class VirtualTerm {
     }
     this.schedulePersist();
   }
-  fit() {
+  fit(opts={}) {
     const width = Math.max(1, this.host.clientWidth || this.host.getBoundingClientRect().width);
     const height = Math.max(1, this.host.clientHeight || this.host.getBoundingClientRect().height);
     this.ctx.font = this.font();
     const asciiW = this.ctx.measureText('0').width || this.ctx.measureText('M').width;
     const wideW = Math.max(this.ctx.measureText('あ').width, this.ctx.measureText('Ｗ').width, this.ctx.measureText('漢').width);
-    const naturalW = Math.max(4, Math.max(asciiW, wideW / 2, this.options.fontSize * 0.5));
-    const naturalH = Math.max(8, this.options.fontSize * 1.25);
+    const naturalW = Math.max(2, Math.max(asciiW, wideW / 2, this.options.fontSize * 0.5));
+    const naturalH = Math.max(4, this.options.fontSize * 1.25);
     const cols = Math.max(8, Math.floor(width / naturalW));
-    const rows = Math.max(4, Math.floor(height / naturalH));
+    const rows = opts.preserveRows ? this.rows : Math.max(4, Math.floor(height / naturalH));
     this.fitPixelW = width;
     this.fitPixelH = height;
     this.charW = width / cols;
@@ -313,6 +384,9 @@ class VirtualTerm {
     this.resize(cols, rows);
   }
   font() { return `${this.options.fontSize}px ${TERMINAL_FONT_FAMILY}`; }
+  fontMetrics() {
+    return { renderer:'virtual', fontSize:this.options.fontSize, charW:this.charW, charH:this.charH, rows:this.rows, cols:this.cols, pixelW:this.fitPixelW, pixelH:this.fitPixelH };
+  }
   resize(cols, rows) {
     cols = Math.max(8, Math.floor(cols)); rows = Math.max(4, Math.floor(rows));
     const oldRows = this.rows;
@@ -357,17 +431,19 @@ class VirtualTerm {
     this.canvas.width = Math.max(1, Math.ceil(this.pixelW * dpr));
     this.canvas.height = Math.max(1, Math.ceil(this.pixelH * dpr));
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.requestRender();
+    this.renderNow();
   }
   onData(cb) { this.dataHandlers.push(cb); }
-  emitData(data) { for (const cb of this.dataHandlers) cb(data); }
+  emitData(data) { if (this.restoring) return; for (const cb of this.dataHandlers) cb(data); }
   focus() { try { this.textarea.focus({ preventScroll:true }); } catch (_) { this.textarea.focus(); } this.requestRender(); }
   setCompositionPreview(text) { this.compositionPreview = text || ''; this.requestRender(); }
   clearTextureAtlas() {}
-  refresh() { this.requestRender(); }
+  refresh() { this.renderNow(); }
+  ensureCursorVisible() { if (this.viewOffset) { this.viewOffset = 0; this.renderNow(); } }
   clear() { this.pushScreenToScrollback(); this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.g0Charset = 'B'; this.g1Charset = 'B'; this.activeCharsetSlot = 'G0'; this.activeCharset = 'B'; this.viewOffset = 0; this.initLines(); this.clearSelection(); this.schedulePersist(); this.requestRender(); }
   restoreReplay(text) {
-    this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.g0Charset = 'B'; this.g1Charset = 'B'; this.activeCharsetSlot = 'G0'; this.activeCharset = 'B'; this.viewOffset = 0; this.scrollback = []; this.initLines(); this.clearSelection(); this.parse(String(text || '')); this.requestRender();
+    this.beginRestore();
+    this.x = 0; this.y = 0; this.wrapPending = false; this.autoWrap = true; this.insertMode = false; this.originMode = false; this.cursorVisible = true; this.lastChar = ' '; this.scrollTop = 0; this.scrollBottom = this.rows - 1; this.attr = cloneAttr(VirtualTerm.defaultAttr); this.g0Charset = 'B'; this.g1Charset = 'B'; this.activeCharsetSlot = 'G0'; this.activeCharset = 'B'; this.viewOffset = 0; this.scrollback = []; this.initLines(); this.clearSelection(); this.parse(String(text || '')); this.endRestore();
   }
   select(x, y, len) { this.selection = { start:y * this.cols + x, end:y * this.cols + x + Math.max(1, len) - 1 }; this.requestRender(); }
   setSelectionRange(start, end) { this.selection = { start, end }; this.requestRender(); }
@@ -643,7 +719,7 @@ class VirtualTerm {
     if (state) {
       let targetTopLine = NaN;
       if (state.cursorInView && Number.isFinite(Number(state.cursorLine)) && Number.isFinite(Number(state.cursorViewportRow))) {
-        targetTopLine = Number(state.cursorLine) - Number(state.cursorViewportRow);
+        targetTopLine = Number(state.cursorLine) - scaledCursorViewportRow(state, this.rows);
       } else if (!state.atBottom && Number.isFinite(Number(state.topLine))) {
         targetTopLine = Number(state.topLine);
       }
@@ -669,6 +745,7 @@ class VirtualTerm {
     const cv = x => x === 0 ? 0 : 55 + x * 40;
     return `rgb(${cv(r)},${cv(g)},${cv(b)})`;
   }
+  renderNow() { this.pendingRender = false; this.render(); }
   requestRender() { if (this.pendingRender) return; this.pendingRender = true; requestAnimationFrame(() => { this.pendingRender = false; this.render(); }); }
   isSelected(x, y) {
     if (!this.selection) return false;
@@ -811,6 +888,10 @@ class XtermCompat {
     this.term.loadAddon(this.fitAddon);
     this.term.open(host);
     this.textarea = this.term.textarea;
+    this.xtermElement = host.querySelector('.xterm');
+    this.viewportElement = host.querySelector('.xterm-viewport');
+    this.scrollAreaElement = host.querySelector('.xterm-scroll-area');
+    this.screenElement = host.querySelector('.xterm-screen');
     this.canvas = host.querySelector('.xterm-screen canvas') || host;
     this.dataHandlers = [];
     this.filterBuffer = '';
@@ -819,6 +900,9 @@ class XtermCompat {
     this.persistTimer = null;
     this.transcript = '';
     this.restoring = false;
+    this.visualTopRow = 0;
+    this.visualRows = 0;
+    this.visualCellHeight = 0;
     this.term.onData(data => this.emitData(data));
     this.fit();
   }
@@ -827,12 +911,13 @@ class XtermCompat {
   set rows(_) {}
   set cols(_) {}
   onData(cb) { this.dataHandlers.push(cb); }
-  emitData(data) { for (const cb of this.dataHandlers) cb(data); }
-  fit() {
+  emitData(data) { if (this.restoring) return; for (const cb of this.dataHandlers) cb(data); }
+  fit(opts={}) {
     this.term.options.fontSize = this.options.fontSize;
     const hostRect = this.host.getBoundingClientRect();
     const width = Math.max(1, this.host.clientWidth || hostRect.width);
     const height = Math.max(1, this.host.clientHeight || hostRect.height);
+    const wasAtBottom = this.isVisualViewportAtBottom();
     let cell = null;
     try { cell = this.term._core && this.term._core._renderService && this.term._core._renderService.dimensions.css.cell; } catch (_) {}
     if (!cell || !cell.width || !cell.height) {
@@ -841,12 +926,95 @@ class XtermCompat {
     }
     if (cell && cell.width > 0 && cell.height > 0) {
       const cols = Math.max(2, Math.floor(width / cell.width) - 1);
-      const rows = Math.max(1, Math.floor(height / cell.height));
+      const rows = opts.preserveRows ? this.term.rows : Math.max(1, Math.floor(height / cell.height));
       if (this.term.cols !== cols || this.term.rows !== rows) this.term.resize(cols, rows);
-    } else {
+      this.updateVisualViewport(opts, cell, height, wasAtBottom);
+    } else if (!opts.preserveRows) {
       this.fitAddon.fit();
+      this.clearVisualViewport();
+    } else {
+      this.updateVisualViewport(opts, null, height, wasAtBottom);
     }
-    this.refresh();
+  }
+  fontMetrics() {
+    let cell = null;
+    let canvas = null;
+    try { cell = this.term._core && this.term._core._renderService && this.term._core._renderService.dimensions.css.cell; } catch (_) {}
+    try { canvas = this.term._core && this.term._core._renderService && this.term._core._renderService.dimensions.css.canvas; } catch (_) {}
+    return {
+      renderer:'xterm',
+      fontSize:this.options.fontSize,
+      termFontSize:this.term.options.fontSize,
+      cellWidth:cell && cell.width || 0,
+      cellHeight:cell && cell.height || 0,
+      rows:this.term.rows,
+      cols:this.term.cols,
+      canvasWidth:canvas && canvas.width || 0,
+      canvasHeight:canvas && canvas.height || 0,
+      visualRows:this.visualRows || this.term.rows || 0
+    };
+  }
+  xtermState() {
+    try {
+      const buffer = this.term.buffer && this.term.buffer.active;
+      if (!buffer) return { atBottom:true, cursorY:0 };
+      const baseY = Number(buffer.baseY || 0);
+      const viewportY = Number(buffer.viewportY || 0);
+      return { atBottom:baseY === viewportY, cursorY:Number(buffer.cursorY || 0) };
+    } catch (_) { return { atBottom:true, cursorY:0 }; }
+  }
+  maxVisualTopRow() { return Math.max(0, (this.term.rows || 0) - (this.visualRows || this.term.rows || 0)); }
+  isVisualViewportAtBottom() {
+    const state = this.xtermState();
+    return state.atBottom && Math.round(this.visualTopRow || 0) >= this.maxVisualTopRow();
+  }
+  clearVisualViewport() {
+    this.visualTopRow = 0;
+    this.visualRows = this.term.rows || 0;
+    this.visualCellHeight = 0;
+    this.clearViewportSizeOverride();
+    this.applyVisualViewportTransform();
+  }
+  syncViewportSizeOverride(hostHeight) {
+    const h = Math.max(1, Math.floor(Number(hostHeight) || 0));
+    if (this.xtermElement) this.xtermElement.style.height = `${h}px`;
+    if (this.viewportElement) {
+      this.viewportElement.style.height = `${h}px`;
+      this.viewportElement.style.maxHeight = `${h}px`;
+      this.viewportElement.style.overflow = 'hidden';
+    }
+    if (this.scrollAreaElement) {
+      const rowsHeight = Math.ceil((this.term.rows || 1) * (this.visualCellHeight || 1));
+      this.scrollAreaElement.style.height = `${Math.max(h, rowsHeight)}px`;
+    }
+  }
+  clearViewportSizeOverride() {
+    if (this.xtermElement) this.xtermElement.style.height = '';
+    if (this.viewportElement) {
+      this.viewportElement.style.height = '';
+      this.viewportElement.style.maxHeight = '';
+      this.viewportElement.style.overflow = '';
+    }
+    if (this.scrollAreaElement) this.scrollAreaElement.style.height = '';
+  }
+  updateVisualViewport(opts={}, cell=null, hostHeight=0, wasAtBottom=false) {
+    if (!opts.preserveRows || !cell || !cell.height || !this.screenElement) { this.clearVisualViewport(); return; }
+    this.visualCellHeight = cell.height;
+    this.visualRows = Math.max(1, Math.min(this.term.rows || 1, Math.floor(hostHeight / cell.height)));
+    if (this.visualRows >= (this.term.rows || 1)) { this.clearVisualViewport(); return; }
+    this.syncViewportSizeOverride(hostHeight);
+    const maxTop = this.maxVisualTopRow();
+    if (wasAtBottom) this.visualTopRow = maxTop;
+    else this.visualTopRow = Math.max(0, Math.min(maxTop, this.visualTopRow || 0));
+    this.applyVisualViewportTransform();
+  }
+  applyVisualViewportTransform() {
+    if (!this.screenElement) return;
+    const offset = Math.max(0, Math.round((this.visualTopRow || 0) * (this.visualCellHeight || 0)));
+    const transform = offset ? `translateY(${-offset}px)` : "";
+    this.screenElement.style.transform = transform;
+    this.screenElement.style.transformOrigin = offset ? "left top" : "";
+    this.screenElement.style.willChange = offset ? "transform" : "";
   }
   focus() { this.term.focus(); }
   setPersistKey(key) {
@@ -870,6 +1038,8 @@ class XtermCompat {
     } catch (_) {}
     try { localStorage.setItem(scrollbackStoragePrefix + this.persistKey, json); } catch (_) {}
   }
+  beginRestore() { this.restoring = true; this.host.classList.add('restoring'); }
+  endRestore() { this.restoring = false; this.host.classList.remove('restoring'); this.refresh(); }
   restorePersisted() {
     if (!this.persistKey) return;
     try {
@@ -884,15 +1054,12 @@ class XtermCompat {
         text = lines.concat(screen).map(x => String(x)).join('\r\n');
       }
       if (!text) return;
-      this.restoring = true;
+      this.beginRestore();
       this.transcript = text.slice(-XTERM_TRANSCRIPT_LIMIT);
       this.filterBuffer = '';
-      this.term.write(this.filterOutput(this.transcript), () => {
-        this.restoring = false;
-        this.refresh();
-      });
+      this.term.write(this.filterOutput(this.transcript), () => this.endRestore());
     } catch (_) {
-      this.restoring = false;
+      this.endRestore();
     }
   }
   appendTranscript(text) {
@@ -938,11 +1105,48 @@ class XtermCompat {
     this.filterBuffer = "";
     this.transcript = String(text || "").slice(-XTERM_TRANSCRIPT_LIMIT);
     if (!this.transcript) { this.refresh(); return; }
-    this.restoring = true;
-    this.term.write(this.filterOutput(this.transcript), () => { this.restoring = false; this.refresh(); });
+    this.beginRestore();
+    this.term.write(this.filterOutput(this.transcript), () => this.endRestore());
   }
-  refresh() { try { this.term.clearTextureAtlas(); this.term.refresh(0, this.term.rows - 1); } catch (_) {} }
-  scrollView(delta) { try { this.term.scrollLines(-delta); } catch (_) {} }
+  refresh(clearAtlas=false) { try { if (clearAtlas) this.term.clearTextureAtlas(); this.term.refresh(0, this.term.rows - 1); } catch (_) {} }
+  ensureCursorVisible() {
+    try {
+      let state = this.xtermState();
+      if (!state.atBottom) {
+        if (this.term.scrollToBottom) this.term.scrollToBottom(); else this.term.scrollLines(1000000);
+        state = this.xtermState();
+      }
+      const visibleRows = this.visualRows || this.term.rows || 1;
+      const maxTop = this.maxVisualTopRow();
+      let top = Math.max(0, Math.min(maxTop, this.visualTopRow || 0));
+      if (state.cursorY < top) top = state.cursorY;
+      else if (state.cursorY >= top + visibleRows) top = state.cursorY - visibleRows + 1;
+      top = Math.max(0, Math.min(maxTop, top));
+      if (top !== this.visualTopRow) { this.visualTopRow = top; this.applyVisualViewportTransform(); }
+    } catch (_) {}
+  }
+  scrollView(delta) {
+    try {
+      const maxTop = this.maxVisualTopRow();
+      if (maxTop > 0 && delta) {
+        if (delta > 0 && (this.visualTopRow || 0) > 0) {
+          const next = Math.max(0, (this.visualTopRow || 0) - delta);
+          const consumed = (this.visualTopRow || 0) - next;
+          this.visualTopRow = next;
+          this.applyVisualViewportTransform();
+          delta -= consumed;
+        } else if (delta < 0 && (this.visualTopRow || 0) < maxTop) {
+          const amount = -delta;
+          const next = Math.min(maxTop, (this.visualTopRow || 0) + amount);
+          const consumed = next - (this.visualTopRow || 0);
+          this.visualTopRow = next;
+          this.applyVisualViewportTransform();
+          delta += consumed;
+        }
+      }
+      if (delta) this.term.scrollLines(-delta);
+    } catch (_) {}
+  }
   getViewState() {
     try {
       const buffer = this.term.buffer && this.term.buffer.active;
@@ -969,7 +1173,7 @@ class XtermCompat {
       const viewportY = Number(buffer.viewportY || 0);
       let target = NaN;
       if (state.cursorInView && Number.isFinite(Number(state.cursorLine)) && Number.isFinite(Number(state.cursorViewportRow))) {
-        target = Number(state.cursorLine) - Number(state.cursorViewportRow);
+        target = Number(state.cursorLine) - scaledCursorViewportRow(state, this.rows);
       } else if (!state.atBottom && Number.isFinite(Number(state.topLine))) {
         target = Number(state.topLine);
       } else if (!state.atBottom) {
@@ -1036,6 +1240,10 @@ const hiddenSessionBacklog = Array.from({ length:SESSION_COUNT }, () => '');
 const sessionReplayText = Array.from({ length:SESSION_COUNT }, () => '');
 const yesProceedTails = Array.from({ length:SESSION_COUNT }, () => '');
 const autoYesTimers = Array.from({ length:SESSION_COUNT }, () => null);
+const autoYesArmed = Array.from({ length:SESSION_COUNT }, () => false);
+const sessionFlashTimers = Array.from({ length:SESSION_COUNT }, () => null);
+const sessionTitles = Array.from({ length:SESSION_COUNT }, (_, i) => ({ backend:'Termux', target:TERMUX_HOST + ':' + (TERMUX_BASE_PORT + i), state:'idle' }));
+sessionTitleStatusReady = true;
 for (const p of panes) { p.pending = ''; p.writeScheduled = false; p.lastActiveAt = 0; }
 function normalizeSessionId(session) { return Math.max(0, Math.min(SESSION_COUNT - 1, Number(session) || 0)); }
 function appendSessionReplay(session, text) {
@@ -1068,9 +1276,75 @@ function queueWrite(p, text) {
   });
 }
 function visiblePaneCount() { return Math.max(1, Math.min(panes.length, Number(splitCount) || 1)); }
+function sessionTitleText(session) {
+  const s = normalizeSessionId(session);
+  const t = sessionTitles[s] || {};
+  return `S${s + 1} ${t.backend || 'Termux'} ${t.target || `${TERMUX_HOST}:${TERMUX_BASE_PORT + s}`} - ${t.state || 'idle'}`;
+}
+function updatePaneTitle(index) {
+  const p = panes[index];
+  const el = document.querySelector('#pane' + index + ' .paneTitle');
+  if (p && el) el.textContent = sessionTitleText(p.session);
+}
+function updatePaneTitles() { panes.forEach((_, i) => updatePaneTitle(i)); }
+function defaultTermuxTarget(session) { const s = normalizeSessionId(session); return TERMUX_HOST + ":" + (TERMUX_BASE_PORT + s); }
+function updateSessionTitle(session, patch={}) {
+  const s = normalizeSessionId(session);
+  sessionTitles[s] = Object.assign({}, sessionTitles[s], patch);
+  updatePaneTitles();
+}
+function noteBridgeStatus(text) {
+  const value = String(text || '');
+  let m = /^Session\s+(\d+):\s*(.*)$/.exec(value);
+  if (m) {
+    const s = normalizeSessionId(Number(m[1]) - 1);
+    const detail = m[2] || 'ready';
+    updateSessionTitle(s, { backend:'Termux', target:detail.includes('127.0.0.1:') ? detail.replace(/^connecting\s+/, '') : defaultTermuxTarget(s), state:detail });
+    return;
+  }
+  m = /^Skydnir\s+(\d+):\s*(.*)$/.exec(value);
+  if (m) {
+    const s = normalizeSessionId(Number(m[1]) - 1);
+    updateSessionTitle(s, { backend:'Skydnir', target:dockerEndpoint(), state:m[2] || 'ready' });
+  }
+}
+function scaledCursorViewportRow(state, currentRows) {
+  const rows = Math.max(1, Number(currentRows) || 1);
+  const sourceRows = Math.max(1, Number(state && state.rows) || rows);
+  const sourceRow = Number(state && state.cursorViewportRow);
+  if (!Number.isFinite(sourceRow)) return 0;
+  if (rows <= 1 || sourceRows <= 1) return 0;
+  return Math.max(0, Math.min(rows - 1, Math.round(sourceRow * (rows - 1) / (sourceRows - 1))));
+}
 function isPaneVisible(index) { return index >= 0 && index < visiblePaneCount(); }
 function normalizePaneIndex(index) { index = Math.max(0, Math.min(panes.length - 1, Number(index) || 0)); return isPaneVisible(index) ? index : 0; }
 function active() { activePane = normalizePaneIndex(activePane); return panes[activePane]; }
+function setSkydnirMenuPane(index) {
+  skydnirActionsPane = index >= 0 && isPaneVisible(index) ? normalizePaneIndex(index) : -1;
+  panes.forEach((_, i) => document.getElementById('pane' + i).classList.toggle('skydnirMenuPane', i === skydnirActionsPane));
+}
+function skydnirPane() {
+  if (!document.body.classList.contains('skydnirActions') || skydnirActionsPane < 0 || !isPaneVisible(skydnirActionsPane)) return active();
+  return panes[skydnirActionsPane];
+}
+function skydnirMenuSession() { return skydnirPane().session; }
+function sessionForPaneElement(el) {
+  const paneEl = el && el.closest ? el.closest('.pane') : null;
+  if (!paneEl || !paneEl.id) return -1;
+  const m = paneEl.id.match(/^pane(\d+)$/);
+  if (!m) return -1;
+  const paneIndex = Number(m[1]);
+  return isPaneVisible(paneIndex) ? panes[paneIndex].session : -1;
+}
+function skydnirActionSession(source) {
+  if (Number.isFinite(Number(source))) {
+    const paneIndex = normalizePaneIndex(Number(source));
+    return panes[paneIndex].session;
+  }
+  const fromButton = sessionForPaneElement(source && source.currentTarget);
+  if (fromButton >= 0) return fromButton;
+  return skydnirMenuSession();
+}
 function visiblePaneForSession(session) {
   const s = normalizeSessionId(session);
   for (let i=0; i<panes.length; i++) if (isPaneVisible(i) && panes[i].session === s) return i;
@@ -1087,14 +1361,8 @@ function leastRecentlyActiveVisiblePane() {
 function focusSessionForPrompt(session) {
   if (!autoYesProceed) return;
   const s = normalizeSessionId(session);
-  let paneIndex = visiblePaneForSession(s);
-  if (paneIndex < 0) {
-    paneIndex = leastRecentlyActiveVisiblePane();
-    switchPaneSession(paneIndex, s, true);
-  } else {
-    setActivePane(paneIndex);
-  }
-  setStatus(`S${s + 1} needs confirmation`);
+  if (autoYesArmed[s]) return;
+  setStatus(`S${s + 1} needs confirmation; auto enter in ${Math.round(AUTO_YES_ENTER_DELAY_MS / 1000)}s`);
   scheduleAutoYesEnter(s);
 }
 function inspectYesProceedOutput(session, text) {
@@ -1106,18 +1374,22 @@ function inspectYesProceedOutput(session, text) {
 }
 function clearAutoYesTimer(session) {
   const s = normalizeSessionId(session);
-  if (!autoYesTimers[s]) return;
-  clearTimeout(autoYesTimers[s]);
-  autoYesTimers[s] = null;
+  autoYesArmed[s] = false;
+  if (autoYesTimers[s]) {
+    clearTimeout(autoYesTimers[s]);
+    autoYesTimers[s] = null;
+  }
 }
 function clearAllAutoYesTimers() {
   for (let i=0; i<autoYesTimers.length; i++) clearAutoYesTimer(i);
 }
 function scheduleAutoYesEnter(session) {
   const s = normalizeSessionId(session);
-  clearAutoYesTimer(s);
+  if (autoYesTimers[s]) return;
+  autoYesArmed[s] = true;
   autoYesTimers[s] = setTimeout(() => {
     autoYesTimers[s] = null;
+    autoYesArmed[s] = false;
     writeSessionText(s, '\r', false);
     setStatus(`S${s + 1} auto enter`);
   }, AUTO_YES_ENTER_DELAY_MS);
@@ -1142,8 +1414,14 @@ function restorePaneView(index, state=sessionViewStates[panes[index].session]) {
   p.term.restoreViewState(state || { atBottom:true, offset:0 });
 }
 function restorePaneViewSoon(index, state=sessionViewStates[panes[index].session]) {
+  const cursorOnly = restoringInitialLayout;
   for (const delay of [0, REFRESH_AFTER_FIT_MS, RESIZE_SLOW_DELAY_MS, 360, 700]) {
-    setTimeout(() => restorePaneView(index, state), delay);
+    setTimeout(() => {
+      if (cursorOnly) {
+        const p = panes[index];
+        if (p && isPaneVisible(index) && p.term.ensureCursorVisible) p.term.ensureCursorVisible();
+      } else restorePaneView(index, state);
+    }, delay);
   }
 }
 function restoreSnapshots(snapshots) {
@@ -1154,16 +1432,37 @@ function restoreSnapshotsSoon(snapshots) {
     setTimeout(() => restoreSnapshots(snapshots), delay);
   }
 }
-function relayout(reason='layout') {
+function keepVisibleCursors() {
+  panes.forEach((p, i) => { if (isPaneVisible(i) && p.term.ensureCursorVisible) p.term.ensureCursorVisible(); });
+}
+function relayout(reason='layout', settleDelays=[REFRESH_AFTER_FIT_MS, RESIZE_SLOW_DELAY_MS, 360, 700], restoreMode='view', notifyBackend=true, preserveRows=false) {
   const snapshots = panes.map((_, i) => paneViewSnapshot(i));
   rememberVisiblePaneViews();
-  fitAll(reason);
-  restoreSnapshots(snapshots);
-  for (const delay of [REFRESH_AFTER_FIT_MS, RESIZE_SLOW_DELAY_MS, 360, 700]) {
-    setTimeout(() => { fitAll(reason + '-' + delay); restoreSnapshots(snapshots); }, delay);
+  fitAll(reason, notifyBackend, preserveRows);
+  if (restoreMode === 'cursor') { keepVisibleCursors(); rememberVisiblePaneViews(); } else restoreSnapshots(snapshots);
+  for (const delay of settleDelays) {
+    setTimeout(() => { fitAll(reason + '-' + delay, notifyBackend, preserveRows); if (restoreMode === 'cursor') keepVisibleCursors(); else restoreSnapshots(snapshots); }, delay);
   }
 }
-function refocusActiveSoon() { setTimeout(() => { try { active().term.focus(); } catch (_) {} }, REFOCUS_DELAY_MS); }
+function suppressTerminalRefocus(ms=500) {
+  terminalRefocusSuppressedUntil = Math.max(terminalRefocusSuppressedUntil, Date.now() + ms);
+}
+function terminalRefocusAllowed() { return Date.now() >= terminalRefocusSuppressedUntil; }
+function terminalFocusActive() { return panes.some(p => document.activeElement === p.term.textarea); }
+function shouldKeepSoftKeyboardForSpecialKey() { return softKeyboardVisible && terminalFocusActive(); }
+function prepareSpecialKeyPress(ev) {
+  if (ev && ev.target && ev.target.closest && !ev.target.closest('button')) return false;
+  const keepIme = shouldKeepSoftKeyboardForSpecialKey();
+  if (keepIme) {
+    specialKeyKeepImeUntil = Date.now() + 900;
+    if (ev && ev.cancelable) ev.preventDefault();
+  } else {
+    suppressTerminalRefocus();
+  }
+  return keepIme;
+}
+function consumeSpecialKeyKeepIme() { return Date.now() < specialKeyKeepImeUntil; }
+function refocusActiveSoon() { setTimeout(() => { if (!terminalRefocusAllowed()) return; try { active().term.focus(); } catch (_) {} }, REFOCUS_DELAY_MS); }
 function clearActiveSelection() { try { active().term.clearSelection(); } catch (_) {} }
 function selectionDragActive() { return !!(selectionMode && selectionMode.dragging); }
 function prepareTerminalInput(refocus=false) {
@@ -1191,13 +1490,13 @@ function sendResizeForSession(session, rows, cols, force=false) {
   state.rows = rows; state.cols = cols;
   Android.resize(s, rows, cols);
 }
-function sendResize(index) {
+function sendResize(index, notifyBackend=true) {
   if (!isPaneVisible(index)) return;
   const p = panes[index];
   const g = paneGeometry(index);
   const force = p.lastRows !== g.rows || p.lastCols !== g.cols;
   p.lastRows = g.rows; p.lastCols = g.cols;
-  sendResizeForSession(p.session, g.rows, g.cols, force);
+  if (notifyBackend) sendResizeForSession(p.session, g.rows, g.cols, force);
   if (index === activePane) setStatus(`S${p.session + 1} ${g.rows}x${g.cols} font ${fontSize.toFixed(1)}`);
 }
 function broadcastHiddenSessionResize() {
@@ -1208,28 +1507,41 @@ function broadcastHiddenSessionResize() {
     if (!visibleSessions.has(s)) sendResizeForSession(s, ref.rows, ref.cols);
   }
 }
-function fitAll(reason='layout') {
+function fitAll(reason='layout', notifyBackend=true, preserveRows=false) {
   applyViewportHeight();
   panes.forEach((p, i) => {
     if (!isPaneVisible(i)) return;
     p.term.options.fontSize = fontSize;
-    p.term.fit();
-    p.term.refresh();
-    sendResize(i);
+    p.term.fit({ preserveRows });
+    sendResize(i, notifyBackend);
   });
-  broadcastHiddenSessionResize();
+  if (notifyBackend) broadcastHiddenSessionResize();
 }
 function setFontSize(value) { fontSize = clampFontSize(value); relayout('font'); saveLayout(); }
 function isTerminalInputFocused() {
   return panes.some(p => document.activeElement === p.term.textarea);
 }
 let resizeTimer = null;
+let backendResizeTimer = null;
+let observedLayoutFrame = null;
+const observedLayoutSizes = new WeakMap();
 function androidCssHeight() {
   try { return Android.webViewCssHeight ? Number(Android.webViewCssHeight()) || 0 : 0; } catch (_) { return 0; }
 }
+function androidVisibleCssHeight() {
+  try { return Android.visibleDisplayCssHeight ? Number(Android.visibleDisplayCssHeight()) || 0 : 0; } catch (_) { return 0; }
+}
 function viewportHeight() {
-  const values = [window.innerHeight || 0, window.visualViewport && window.visualViewport.height || 0, androidCssHeight()].filter(v => v > 0);
-  return Math.floor(values.length ? Math.min(...values) : 0);
+  const core = [window.innerHeight || 0, window.visualViewport && window.visualViewport.height || 0, androidCssHeight()].filter(v => v > 0);
+  const visible = androidVisibleCssHeight();
+  const values = core.slice();
+  if (visible > 0) {
+    const agreesWithCore = !core.length || core.some(v => Math.abs(v - visible) <= 2 || v <= visible + 2);
+    if (agreesWithCore) values.push(visible);
+  }
+  if (!values.length) return 0;
+  values.sort((a, b) => a - b);
+  return Math.floor(values[Math.floor((values.length - 1) / 2)]);
 }
 function applyViewportHeight() {
   const h = viewportHeight();
@@ -1240,10 +1552,20 @@ function applyViewportHeight() {
 }
 applyViewportHeight();
 let lastViewportHeight = viewportHeight();
+function flushBackendResize() {
+  panes.forEach((_, i) => { if (isPaneVisible(i)) sendResize(i, true); });
+  broadcastHiddenSessionResize();
+}
+function scheduleBackendResize() {
+  if (backendResizeTimer) clearTimeout(backendResizeTimer);
+  backendResizeTimer = setTimeout(() => { backendResizeTimer = null; flushBackendResize(); }, 420);
+}
 function scheduleWindowFit() {
   applyViewportHeight();
   const nextHeight = viewportHeight();
-  const delta = Math.abs(nextHeight - lastViewportHeight);
+  const prevHeight = lastViewportHeight;
+  const delta = Math.abs(nextHeight - prevHeight);
+  if (delta > RESIZE_KEYBOARD_DELTA) softKeyboardVisible = nextHeight < prevHeight;
   lastViewportHeight = nextHeight;
   rememberVisiblePaneViews();
   saveLayout();
@@ -1251,9 +1573,42 @@ function scheduleWindowFit() {
   resizeTimer = setTimeout(() => {
     resizeTimer = null;
     const wasFocused = isTerminalInputFocused();
-    relayout(delta > RESIZE_KEYBOARD_DELTA ? 'keyboard' : 'window');
+    relayout(delta > RESIZE_KEYBOARD_DELTA ? 'keyboard' : 'window', [], 'cursor', false, true);
+    scheduleBackendResize();
     setTimeout(() => { if (wasFocused) refocusActiveSoon(); }, REFRESH_AFTER_FIT_MS);
   }, delta > RESIZE_KEYBOARD_DELTA ? RESIZE_FAST_DELAY_MS : RESIZE_SLOW_DELAY_MS);
+}
+function observedLayoutChanged(target) {
+  if (!target || !target.getBoundingClientRect) return false;
+  const rect = target.getBoundingClientRect();
+  const key = `${Math.round(rect.width)}x${Math.round(rect.height)}`;
+  if (observedLayoutSizes.get(target) === key) return false;
+  observedLayoutSizes.set(target, key);
+  return rect.width > 0 && rect.height > 0;
+}
+function scheduleObservedLayoutFit() {
+  if (observedLayoutFrame) cancelAnimationFrame(observedLayoutFrame);
+  observedLayoutFrame = requestAnimationFrame(() => {
+    observedLayoutFrame = null;
+    const nextHeight = viewportHeight();
+    if (Math.abs(nextHeight - lastViewportHeight) > 1) {
+      scheduleWindowFit();
+      return;
+    }
+    rememberVisiblePaneViews();
+    relayout('observed-layout', [], 'cursor', false, true);
+    scheduleBackendResize();
+  });
+}
+function installResizeObservers() {
+  if (typeof ResizeObserver !== 'function') return;
+  const observer = new ResizeObserver(entries => {
+    if (entries.some(entry => observedLayoutChanged(entry.target))) scheduleObservedLayoutFit();
+  });
+  [document.documentElement, document.body, document.getElementById('terms'), ...panes.map(p => p.term.element || p.term.host)].filter(Boolean).forEach(el => {
+    observedLayoutChanged(el);
+    try { observer.observe(el); } catch (_) {}
+  });
 }
 function setActivePane(index) {
   index = normalizePaneIndex(index);
@@ -1270,6 +1625,17 @@ function setActivePane(index) {
   refreshSessions();
   saveLayout();
 }
+function flashHiddenSessionButton(session) {
+  const s = normalizeSessionId(session);
+  if (visiblePaneForSession(s) >= 0 || sessionFlashTimers[s]) return;
+  const b = sessions && sessions.children ? sessions.children[s] : null;
+  if (!b) return;
+  b.classList.add("sessionFlash");
+  sessionFlashTimers[s] = setTimeout(() => {
+    sessionFlashTimers[s] = null;
+    b.classList.remove("sessionFlash");
+  }, 140);
+}
 function terminalWriteBase64(session, b64) {
   const s = normalizeSessionId(session);
   const bytes = fromB64(b64);
@@ -1281,6 +1647,7 @@ function terminalWriteBase64(session, b64) {
     if (p.session === s) { queueWrite(p, text); delivered = true; }
   }
   if (!delivered) appendHiddenSessionBacklog(s, text);
+  if (text && visiblePaneForSession(s) < 0) flashHiddenSessionButton(s);
 }
 window.terminalWriteBase64 = terminalWriteBase64;
 function resetPaneForSession(paneIndex, session) {
@@ -1303,7 +1670,7 @@ function resetPaneForSession(paneIndex, session) {
   } else if (hiddenBacklog) {
     setTimeout(() => { if (p.session === session) queueWrite(p, hiddenBacklog); }, REFRESH_AFTER_FIT_MS);
   }
-  document.querySelector('#pane' + paneIndex + ' .paneTitle').textContent = 'S' + (session + 1);
+  updatePaneTitle(paneIndex);
   restorePaneViewSoon(paneIndex);
 }
 function switchPaneSession(paneIndex, session, connect=true) {
@@ -1312,6 +1679,7 @@ function switchPaneSession(paneIndex, session, connect=true) {
   if (panes[paneIndex] && panes[paneIndex].session !== target && dockerBarOpen) setDockerBarOpen(false);
   resetPaneForSession(paneIndex, target);
   if (connect) Android.connectSession(target);
+  updateSessionTitle(target, { backend:"Termux", target:defaultTermuxTarget(target), state:connect ? "connecting" : "ready" });
   setActivePane(paneIndex);
   refreshSessions();
   saveLayout();
@@ -1345,7 +1713,7 @@ function installDirectImeFlush(term, paneIndex) {
   const wasJustSent = text => text && text === lastImmediate && Date.now() - lastImmediateAt < IMMEDIATE_DEDUPE_MS;
   const consumeImmediate = text => { if (!isImmediateAscii(text)) return false; if (wasJustSent(text)) { helper.value = ''; return true; } if (!writePaneText(text)) return false; rememberImmediate(text); return true; };
   const flushHelper = () => { if (selectionDragActive() || Date.now() < selectionInputBlockUntil || !helper.value) return false; const text = helper.value; if (wasJustSent(text)) { helper.value = ''; setPreview(''); return true; } if (helperComposing && !isImmediateAscii(text)) { setPreview(text); return false; } helper.value = ''; return writePaneText(text); };
-  helper.addEventListener('blur', () => { if (activePane === paneIndex && !selectionMode && !selectionDragActive() && Date.now() >= selectionInputBlockUntil) setTimeout(() => { if (!selectionMode && Date.now() >= selectionInputBlockUntil) try { helper.focus({ preventScroll:true }); } catch (_) { helper.focus(); } }, IME_BLUR_REFOCUS_MS); }, true);
+  helper.addEventListener('blur', () => { if (terminalRefocusAllowed() && activePane === paneIndex && !selectionMode && !selectionDragActive() && Date.now() >= selectionInputBlockUntil) setTimeout(() => { if (terminalRefocusAllowed() && !selectionMode && Date.now() >= selectionInputBlockUntil) try { helper.focus({ preventScroll:true }); } catch (_) { helper.focus(); } }, IME_BLUR_REFOCUS_MS); }, true);
   helper.addEventListener('compositionstart', () => { helperComposing = true; setPreview(helper.value || ''); }, true);
   helper.addEventListener('compositionupdate', ev => { const text = helper.value || ev.data || ''; if (consumeImmediate(text)) { ev.preventDefault(); ev.stopImmediatePropagation(); helperComposing = false; } else setPreview(text); }, true);
   helper.addEventListener('compositionend', ev => { const text = helper.value || ev.data || ''; helperComposing = false; setPreview(''); if (wasJustSent(text)) { helper.value = ''; return; } setTimeout(flushHelper, 0); }, true);
@@ -1397,6 +1765,7 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', scheduleWindowFit);
   window.visualViewport.addEventListener('scroll', scheduleWindowFit);
 }
+installResizeObservers();
 function refreshActivePaneSoon() {
   requestAnimationFrame(() => {
     try { active().term.refresh(); } catch (_) {}
@@ -1516,8 +1885,8 @@ function switchSessionBySwipe(paneIndex, direction) {
 function scrollLinesForDelta(term, dy) {
   const element = term.element || term.host || document.getElementById("terms");
   const rect = element.getBoundingClientRect();
-  const rows = Math.max(1, term.rows || DEFAULT_ROWS);
-  const cellH = Math.max(6, rect.height / rows);
+  const rows = Math.max(1, term.visualRows || term.rows || DEFAULT_ROWS);
+  const cellH = Math.max(6, term.visualCellHeight || rect.height / rows);
   return Math.max(1, Math.min(rows * 2, Math.round(Math.abs(dy) / cellH * 1.6)));
 }
 function applySelectionMode() {
@@ -1720,10 +2089,10 @@ document.getElementById('terms').addEventListener('touchend', () => {
 document.getElementById('copySel').onclick = copySelection;
 
 const mods = { ctrl:false, alt:false, esc:false };
-function setMod(name) { mods[name] = !mods[name]; refreshModButtons(); active().term.focus(); }
+function setMod(name, refocus=true) { mods[name] = !mods[name]; refreshModButtons(); if (refocus) active().term.focus(); }
 function refreshModButtons() { document.querySelectorAll('[data-mod]').forEach(b => b.classList.toggle('active', !!mods[b.dataset.mod])); }
 function ctrlCode(text) { if (!text || text.length !== 1) return text; const c = text.toUpperCase().charCodeAt(0); if (c >= 64 && c <= 95) return String.fromCharCode(c - 64); if (text === ' ') return '\x00'; return text; }
-function sendKey(data) { if (data && data === imeSuppressText && Date.now() < imeSuppressUntil) return; let out = data; if (mods.ctrl) out = ctrlCode(out); if (mods.alt) out = '\x1b' + out; if (mods.esc) out = '\x1b' + out; mods.ctrl = false; mods.alt = false; mods.esc = false; refreshModButtons(); sendText(out); active().term.focus(); }
+function sendKey(data, refocus=true) { if (data && data === imeSuppressText && Date.now() < imeSuppressUntil) return; let out = data; if (mods.ctrl) out = ctrlCode(out); if (mods.alt) out = '\x1b' + out; if (mods.esc) out = '\x1b' + out; mods.ctrl = false; mods.alt = false; mods.esc = false; refreshModButtons(); sendText(out); if (refocus) active().term.focus(); }
 const keyDefs = [
   { label:'Ctrl', mod:'ctrl' }, { label:'Alt', mod:'alt' }, { label:'Esc', mod:'esc' }, { label:'Tab', data:'\t' }, { label:'Enter', data:'\r' }, { label:'Bksp', data:'\x7f' },
   { label:'Ins', data:'\x1b[2~' }, { label:'Del', data:'\x1b[3~' }, { label:'Home', data:'\x1b[H' }, { label:'End', data:'\x1b[F' }, { label:'PgUp', data:'\x1b[5~' }, { label:'PgDn', data:'\x1b[6~' }, { gap:true }, { gap:true },
@@ -1734,43 +2103,62 @@ const keyDefs = [
   { label:'F1', data:'\x1bOP' }, { label:'F2', data:'\x1bOQ' }, { label:'F3', data:'\x1bOR' }, { label:'F4', data:'\x1bOS' }, { label:'F5', data:'\x1b[15~' }, { label:'F6', data:'\x1b[17~' }, { label:'F7', data:'\x1b[18~' }, { label:'F8', data:'\x1b[19~' }, { label:'F9', data:'\x1b[20~' }, { label:'F10', data:'\x1b[21~' }, { label:'F11', data:'\x1b[23~' }, { label:'F12', data:'\x1b[24~' }
 ];
 const keys = document.getElementById('keys');
+keys.addEventListener('pointerdown', ev => prepareSpecialKeyPress(ev), { capture:true });
+keys.addEventListener('touchstart', ev => { if (ev.target && ev.target.closest && !ev.target.closest('button')) return; if (shouldKeepSoftKeyboardForSpecialKey()) specialKeyKeepImeUntil = Date.now() + 900; else suppressTerminalRefocus(); }, { capture:true, passive:true });
 for (const key of keyDefs) {
   if (key.spacer || key.gap) { const spacer = document.createElement('div'); spacer.className = key.gap ? 'keyGap' : 'keySpacer'; keys.appendChild(spacer); continue; }
-  const b = document.createElement('button'); b.textContent = key.label;
-  if (key.mod) { b.dataset.mod = key.mod; b.onclick = () => setMod(key.mod); } else b.onclick = () => sendKey(key.data);
+  const b = document.createElement('button'); b.textContent = key.label; b.tabIndex = -1;
+  if (key.mod) { b.dataset.mod = key.mod; b.onclick = () => { const keepIme = consumeSpecialKeyKeepIme(); if (!keepIme) suppressTerminalRefocus(); setMod(key.mod, keepIme); }; } else b.onclick = () => { const keepIme = consumeSpecialKeyKeepIme(); if (!keepIme) suppressTerminalRefocus(); sendKey(key.data, keepIme); };
   keys.appendChild(b);
 }
 
 const dockerBar = document.getElementById('dockerBar');
 let dockerBarOpen = false;
-function setDockerBarOpen(open) {
+let dockerBarMode = '';
+function setDockerBarOpen(open, mode=dockerBarMode) {
   dockerBarOpen = !!open;
+  dockerBarMode = dockerBarOpen ? (mode || 'containers') : '';
   dockerBar.classList.toggle('open', dockerBarOpen);
-  document.getElementById('skydnir').classList.toggle('active', dockerBarOpen);
+  document.querySelectorAll('.skydnirList').forEach(b => b.classList.toggle('active', dockerBarOpen && dockerBarMode === 'containers'));
+  document.querySelectorAll('.skydnirImages').forEach(b => b.classList.toggle('active', dockerBarOpen && dockerBarMode === 'images'));
 }
 function dockerEndpoint() {
-  try { return Android.dockerEndpoint ? Android.dockerEndpoint() : '127.0.0.1:2375'; } catch (_) { return '127.0.0.1:2375'; }
+  try { return Android.dockerEndpoint ? Android.dockerEndpoint() : 'unix://skydnir/engine-12375.sock'; } catch (_) { return 'unix://skydnir/engine-12375.sock'; }
 }
-function renderDockerBar(payload={}) {
+function formatDockerBytes(value) {
+  let n = Number(value) || 0;
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let u = 0;
+  while (n >= 1024 && u < units.length - 1) { n /= 1024; u++; }
+  return (u === 0 ? String(Math.round(n)) : n.toFixed(n >= 10 ? 1 : 2)) + units[u];
+}
+function renderDockerBarShell(payload, mode, refreshFn) {
   dockerBar.textContent = '';
   const endpoint = payload.endpoint || dockerEndpoint();
   const ep = document.createElement('button');
-  ep.textContent = endpoint;
-  ep.onclick = () => {
-    const next = prompt('Docker API endpoint', endpoint);
-    if (next != null && next.trim()) { try { Android.setDockerEndpoint(next.trim()); } catch (_) {} requestDockerContainers(); }
-  };
+  ep.textContent = mode === 'images' ? 'Images' : endpoint;
+  ep.title = endpoint;
+  ep.onclick = refreshFn;
   dockerBar.appendChild(ep);
   const refresh = document.createElement('button');
   refresh.textContent = 'Refresh';
-  refresh.onclick = requestDockerContainers;
+  refresh.onclick = refreshFn;
   dockerBar.appendChild(refresh);
+  if (mode === 'images') {
+    const panel = document.createElement('button');
+    panel.textContent = 'Open Images';
+    panel.onclick = () => openSkydnirImagesPanel(true);
+    dockerBar.appendChild(panel);
+  }
   if (payload.error) {
     const err = document.createElement('button');
     err.textContent = 'API error';
     err.title = payload.error;
     dockerBar.appendChild(err);
   }
+}
+function renderDockerBar(payload={}) {
+  renderDockerBarShell(payload, 'containers', requestDockerContainers);
   const containers = Array.isArray(payload.containers) ? payload.containers : [];
   if (!containers.length && !payload.error) {
     const empty = document.createElement('button');
@@ -1784,18 +2172,311 @@ function renderDockerBar(payload={}) {
     b.title = [c.image, c.status].filter(Boolean).join(' | ');
     b.disabled = !running;
     if (!running) b.classList.add('disabled');
-    b.onclick = () => { if (!running) return; setDockerBarOpen(false); Android.connectDockerContainer(active().session, c.id); };
+    b.onclick = () => { if (!running) return; setDockerBarOpen(false); Android.connectDockerContainer(skydnirMenuSession(), c.id); };
     dockerBar.appendChild(b);
   }
 }
+function renderDockerImagesBar(payload={}) {
+  renderDockerBarShell(payload, 'images', requestDockerImages);
+  const images = Array.isArray(payload.images) ? payload.images : [];
+  if (!images.length && !payload.error) {
+    const empty = document.createElement('button');
+    empty.textContent = 'No images';
+    dockerBar.appendChild(empty);
+  }
+  for (const img of images) {
+    const label = img.repoTag || img.id || 'image';
+    const b = document.createElement('button');
+    b.textContent = label + (img.size ? ' ' + formatDockerBytes(img.size) : '');
+    b.title = [img.id, img.created ? ('created ' + img.created) : '', img.size ? ('size ' + formatDockerBytes(img.size)) : ''].filter(Boolean).join(' | ');
+    dockerBar.appendChild(b);
+    const del = document.createElement('button');
+    del.textContent = 'Delete';
+    del.title = 'Delete image ' + label;
+    del.onclick = () => {
+      if (!confirm('Delete image ' + label + '?')) return;
+      try { Android.deleteDockerImage(label); } catch (_) { setStatus('Skydnir image delete failed'); }
+    };
+    dockerBar.appendChild(del);
+  }
+}
 function requestDockerContainers() {
-  setDockerBarOpen(true);
+  setDockerBarOpen(true, 'containers');
   renderDockerBar({ endpoint: dockerEndpoint() });
   try { Android.refreshDockerContainers(); } catch (_) {}
 }
-window.setDockerContainers = payload => { renderDockerBar(payload || {}); setDockerBarOpen(true); };
+function requestDockerImages() { openSkydnirImagesPanel(true); }
+window.setDockerContainers = payload => { renderDockerBar(payload || {}); setDockerBarOpen(true, 'containers'); };
+window.setDockerImages = payload => { renderSkydnirImagesPanel(payload || {}); };
+const skydnirImagesPanel = document.getElementById('skydnirImagesPanel');
+const skydnirImagesBody = document.getElementById('skydnirImagesBody');
+let currentImagesPayload = { endpoint: dockerEndpoint(), images: [], containers: [], loading: false };
+function closeSkydnirImagesPanel() {
+  skydnirImagesPanel.classList.remove('open');
+  refocusActiveSoon();
+}
+function openSkydnirImagesPanel(refresh=false) {
+  setDockerBarOpen(false);
+  closeSkydnirEditor();
+  skydnirImagesPanel.classList.add('open');
+  if (refresh || !currentImagesPayload.images) {
+    currentImagesPayload = Object.assign({}, currentImagesPayload, { endpoint: dockerEndpoint(), loading: true, error: '' });
+    renderSkydnirImagesPanel(currentImagesPayload);
+    try { Android.refreshDockerImages(); } catch (_) { renderSkydnirImagesPanel({ endpoint: dockerEndpoint(), images: [], containers: [], error: 'Android API unavailable' }); }
+  } else renderSkydnirImagesPanel(currentImagesPayload);
+}
+function imageDisplayRef(img) { return img && (img.repoTag || img.id || 'unknown image'); }
+function imageVersionDetail(ref) {
+  if (!ref) return 'latest';
+  if (ref.includes('@')) return ref.split('@').pop().slice(0, 32);
+  const last = ref.split('/').pop() || ref;
+  return last.includes(':') ? last.split(':').pop() : 'latest';
+}
+function shortImageId(id) { return id ? String(id).replace(/^sha256:/, '').slice(0, 12) : ''; }
+function imageContainerRefs(ref, containers) {
+  return (containers || []).filter(c => (c.image || '') === ref || (c.image || '').includes(ref)).map(c => c.name || (c.id || '').slice(0, 12));
+}
+function addImageSection(parent, title) {
+  const section = document.createElement('div'); section.className = 'imageSection';
+  const h = document.createElement('div'); h.className = 'imageSectionTitle'; h.textContent = title; section.appendChild(h);
+  parent.appendChild(section); return section;
+}
+function addImageMessage(parent, text) { const m = document.createElement('div'); m.className = 'imageMessage'; m.textContent = text; parent.appendChild(m); return m; }
+function imageButton(label, fn, disabled=false) { const b = document.createElement('button'); b.textContent = label; b.disabled = !!disabled; if (disabled) b.classList.add('disabled'); b.onclick = fn; return b; }
+function imageBridgeJson(name, ...args) {
+  try {
+    if (!window.Android || typeof Android[name] !== 'function') return { error: 'Android API unavailable' };
+    return JSON.parse(Android[name](...args) || '{}');
+  } catch (e) { return { error: e && e.message ? e.message : 'Bridge call failed' }; }
+}
+function renderImageActions(parent, images) {
+  const actions = document.createElement('div'); actions.className = 'imageActions';
+  const pullForm = document.createElement('div'); pullForm.className = 'imagePullForm';
+  const input = document.createElement('input'); input.className = 'imagePullInput'; input.value = currentImagesPayload.pullRef || 'ubuntu:24.04'; input.autocapitalize = 'none'; input.autocomplete = 'off'; input.spellcheck = false; input.placeholder = 'image:tag';
+  const pull = imageButton('Pull / Update Image', () => {
+    const ref = input.value.trim();
+    if (!ref) { input.focus(); return; }
+    currentImagesPayload.pullRef = ref;
+    try { Android.pullDockerImage(skydnirMenuSession(), ref); currentImagesPayload.loading = true; currentImagesPayload.error = ''; renderSkydnirImagesPanel(currentImagesPayload); } catch (_) { setStatus('Skydnir image pull failed'); }
+  });
+  input.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); pull.click(); } };
+  pullForm.appendChild(input); pullForm.appendChild(pull); actions.appendChild(pullForm);
+  actions.appendChild(imageButton('Browse image files', () => renderImageFilesRoot(), !images.length));
+  actions.appendChild(imageButton('Prune build cache', () => { try { Android.pruneDockerBuildCache(); currentImagesPayload.loading = true; renderSkydnirImagesPanel(currentImagesPayload); } catch (_) { setStatus('Skydnir prune failed'); } }));
+  actions.appendChild(imageButton('Refresh', () => openSkydnirImagesPanel(true)));
+  parent.appendChild(actions);
+}
+function renderImageWidgets(parent, images, containers) {
+  const grid = document.createElement('div'); grid.className = 'imageWidgetGrid';
+  const storage = currentImagesPayload.storage || {};
+  const total = Number(storage.TotalBytes) || images.reduce((a, i) => a + (Number(i.size) || 0), 0);
+  const unique = Number(storage.UniqueBytes) || images.reduce((a, i) => a + (Number(i.uniqueSize) >= 0 ? Number(i.uniqueSize) : (Number(i.virtualSize || i.size) || 0)), 0);
+  const shared = Number(storage.SharedLayerBytes) || images.reduce((a, i) => a + Math.max(0, Number(i.sharedSize) || 0), 0);
+  const imageViews = Number(storage.ImageViewBytes) || 0;
+  const containerUpper = Number(storage.ContainerUpperBytes) || 0;
+  const buildCache = Array.isArray(storage.BuildCache) ? storage.BuildCache : [];
+  const referenced = images.filter(i => imageContainerRefs(imageDisplayRef(i), containers).length).length;
+  const stale = images.filter(i => !i.repoTag || /^sha256:/.test(i.repoTag)).length;
+  const w1 = document.createElement('div'); w1.className = 'imageWidget';
+  w1.innerHTML = '<div class="imageWidgetTitle">Layer/cache health</div><div class="imageWidgetValue"></div><div class="imageWidgetDetail"></div>';
+  w1.querySelector('.imageWidgetValue').textContent = stale ? `${stale} untagged/stale-looking images` : 'No layer garbage detected';
+  w1.querySelector('.imageWidgetDetail').textContent = `images ${images.length} / referenced ${referenced} / shared layers ${formatDockerBytes(shared)} / build-cache ${buildCache.length} records / container upper ${formatDockerBytes(containerUpper)}`;
+  grid.appendChild(w1);
+  if (images.length || total) {
+    const w2 = document.createElement('div'); w2.className = 'imageWidget';
+    w2.innerHTML = '<div class="imageWidgetTitle">Image storage scope</div><div class="imageWidgetValue"></div><div class="imageWidgetDetail"></div>';
+    w2.querySelector('.imageWidgetValue').textContent = `unique ${formatDockerBytes(unique)} / total ${formatDockerBytes(total)}`;
+    w2.querySelector('.imageWidgetDetail').textContent = `image views ${formatDockerBytes(imageViews)} / shared cache ${formatDockerBytes(shared)} / endpoint ${currentImagesPayload.endpoint || dockerEndpoint()}`;
+    grid.appendChild(w2);
+  }
+  parent.appendChild(grid);
+}
+function addImageGraphLegend(parent) {
+  const legend = document.createElement('div'); legend.className = 'imageLegend';
+  [['image', 'image/base'], ['cache', 'cache/shared layer'], ['compose', 'compose/container reference']].forEach(([kind, text]) => {
+    const b = document.createElement('button'); b.textContent = text; b.className = 'disabled'; b.disabled = true; legend.appendChild(b);
+  });
+  parent.appendChild(legend);
+}
+function addImageGraphRow(parent, row) {
+  const item = document.createElement('div'); item.className = 'imageRow ' + row.kind;
+  const indent = document.createElement('div'); indent.className = 'imageRowIndent'; indent.style.width = `${row.depth * 18}px`; item.appendChild(indent);
+  const kind = document.createElement('div'); kind.className = 'imageKind ' + row.kind; kind.textContent = row.kind; item.appendChild(kind);
+  const main = document.createElement('div'); main.className = 'imageRowMain';
+  const title = document.createElement('div'); title.className = 'imageRowTitle'; title.textContent = row.title; main.appendChild(title);
+  if (row.detail) { const detail = document.createElement('div'); detail.className = 'imageRowDetail'; detail.textContent = row.detail; main.appendChild(detail); }
+  if (row.actions && row.actions.length) {
+    const actions = document.createElement('div'); actions.className = 'imageRowActions';
+    row.actions.forEach(a => actions.appendChild(imageButton(a.label, a.fn, a.disabled)));
+    main.appendChild(actions);
+  }
+  item.appendChild(main); parent.appendChild(item);
+}
+function renderImageReferenceTree(parent, images, containers) {
+  if (!images.length) return;
+  addImageGraphLegend(parent);
+  const graph = document.createElement('div'); graph.className = 'imageGraph';
+  images.slice().sort((a, b) => imageDisplayRef(a).localeCompare(imageDisplayRef(b))).forEach(img => {
+    const ref = imageDisplayRef(img);
+    const refs = imageContainerRefs(ref, containers);
+    const rootfs = Number(img.rootfsEntries) >= 0 ? `rootfs entries ${img.rootfsEntries}` : 'Image rootfs';
+    const layers = Number(img.layers) >= 0 ? `${img.layers} layers` : 'layers unknown';
+    const uniqueSize = Number(img.uniqueSize) >= 0 ? Number(img.uniqueSize) : (Number(img.virtualSize || img.size) || 0);
+    addImageGraphRow(graph, {
+      kind: 'image', depth: 0, title: ref,
+      detail: [rootfs, `version/tag ${imageVersionDetail(ref)}`, `view ${formatDockerBytes(img.size)} / unique image ${formatDockerBytes(uniqueSize)} / shared cache ${Number(img.sharedSize) >= 0 ? formatDockerBytes(img.sharedSize) : 'unknown'}`, layers, shortImageId(img.id)].filter(Boolean).join('\n'),
+      actions: [
+        { label: 'Files', fn: () => openImageFiles(ref, '/') },
+        { label: 'Delete', fn: () => { if (confirm('Delete image ' + ref + '?')) Android.deleteDockerImage(ref); } },
+        { label: 'Clean', fn: () => { if (confirm('Delete image ' + ref + ' and prune build cache/unreferenced layers?')) Android.cleanDockerImage(ref); } }
+      ]
+    });
+    addImageGraphRow(graph, { kind: 'cache', depth: 1, title: 'Shared layer cache', detail: `shared ${Number(img.sharedSize) >= 0 ? formatDockerBytes(img.sharedSize) : 'unknown'} / total layer bytes ${formatDockerBytes(img.virtualSize || img.size)} / ${layers}` });
+    refs.forEach(name => addImageGraphRow(graph, { kind: 'container', depth: 1, title: name, detail: 'container was created from this image' }));
+  });
+  parent.appendChild(graph);
+}
+function renderSkydnirImagesPanel(payload={}) {
+  payload = payload || {};
+  if (payload.error && (!Array.isArray(payload.images) || !payload.images.length) && Array.isArray(currentImagesPayload.images) && currentImagesPayload.images.length) {
+    payload = Object.assign({}, payload, { images: currentImagesPayload.images, containers: currentImagesPayload.containers || [], storage: currentImagesPayload.storage || {} });
+  }
+  currentImagesPayload = Object.assign({ endpoint: dockerEndpoint(), images: [], containers: [], loading: false }, payload);
+  skydnirImagesPanel.classList.add('open');
+  skydnirImagesBody.textContent = '';
+  const images = Array.isArray(currentImagesPayload.images) ? currentImagesPayload.images : [];
+  const containers = Array.isArray(currentImagesPayload.containers) ? currentImagesPayload.containers : [];
+  const top = addImageSection(skydnirImagesBody, 'Images');
+  renderImageActions(top, images);
+  if (currentImagesPayload.loading) addImageMessage(top, 'Loading images...');
+  if (currentImagesPayload.error) addImageMessage(top, 'API error: ' + currentImagesPayload.error);
+  const warnings = Array.isArray(currentImagesPayload.warnings) ? currentImagesPayload.warnings : (currentImagesPayload.warning ? [currentImagesPayload.warning] : []);
+  warnings.filter(Boolean).forEach(w => addImageMessage(top, 'API warning: ' + w));
+  const health = addImageSection(skydnirImagesBody, 'State');
+  renderImageWidgets(health, images, containers);
+  if (!images.length && !currentImagesPayload.loading && !currentImagesPayload.error) addImageMessage(skydnirImagesBody, 'No pulled images yet.');
+  const refs = addImageSection(skydnirImagesBody, 'Image references');
+  renderImageReferenceTree(refs, images, containers);
+}
+function renderImageFilesToolbar(parent, title, actions=[]) {
+  const top = addImageSection(parent, title);
+  const buttons = document.createElement('div'); buttons.className = 'imageActions';
+  actions.forEach(a => buttons.appendChild(imageButton(a.label, a.fn, a.disabled)));
+  top.appendChild(buttons);
+  return top;
+}
+function renderImagePath(parent, text) {
+  const bar = document.createElement('div'); bar.className = 'imagePathBar';
+  const path = document.createElement('div'); path.className = 'imagePath'; path.textContent = text || '/'; bar.appendChild(path);
+  parent.appendChild(bar);
+}
+function imageFileRow(parent, type, name, detail, buttonLabel, fn) {
+  const row = document.createElement('div'); row.className = 'imageFileRow';
+  const t = document.createElement('div'); t.className = 'imageFileType'; t.textContent = type; row.appendChild(t);
+  const main = document.createElement('div');
+  const n = document.createElement('div'); n.className = 'imageFileName'; n.textContent = name; main.appendChild(n);
+  if (detail) { const d = document.createElement('div'); d.className = 'imageFileDetail'; d.textContent = detail; main.appendChild(d); }
+  row.appendChild(main);
+  row.appendChild(imageButton(buttonLabel, fn));
+  parent.appendChild(row);
+}
+function renderImageFilesRoot() {
+  skydnirImagesPanel.classList.add('open');
+  skydnirImagesBody.textContent = '';
+  const images = Array.isArray(currentImagesPayload.images) ? currentImagesPayload.images : [];
+  const top = renderImageFilesToolbar(skydnirImagesBody, 'Image files', [
+    { label: 'Back to Images', fn: () => renderSkydnirImagesPanel(currentImagesPayload) },
+    { label: 'Refresh', fn: () => openSkydnirImagesPanel(true) }
+  ]);
+  addImageMessage(top, 'Select an image rootfs to browse.');
+  if (!images.length) { addImageMessage(skydnirImagesBody, 'No pulled images yet.'); return; }
+  const list = document.createElement('div'); list.className = 'imageFileList';
+  images.slice().sort((a, b) => imageDisplayRef(a).localeCompare(imageDisplayRef(b))).forEach(img => {
+    const ref = imageDisplayRef(img);
+    const details = [
+      Number(img.rootfsEntries) >= 0 ? `rootfs entries ${img.rootfsEntries}` : 'rootfs entries unknown',
+      Number(img.layers) >= 0 ? `${img.layers} layers` : 'layers unknown',
+      `view ${formatDockerBytes(img.size)}`
+    ].join(' / ');
+    imageFileRow(list, 'image', ref, details, 'Open', () => openImageFiles(ref, '/'));
+  });
+  skydnirImagesBody.appendChild(list);
+}
+function openImageFiles(imageRef, path='/') {
+  skydnirImagesPanel.classList.add('open');
+  skydnirImagesBody.textContent = '';
+  const loading = renderImageFilesToolbar(skydnirImagesBody, 'Image files', [
+    { label: 'Back to Images', fn: () => renderSkydnirImagesPanel(currentImagesPayload) },
+    { label: 'Image roots', fn: () => renderImageFilesRoot() }
+  ]);
+  addImageMessage(loading, 'Loading image files...');
+  renderImageFiles(imageBridgeJson('listDockerImageFiles', imageRef, path || '/'));
+}
+function renderImageFiles(payload={}) {
+  skydnirImagesBody.textContent = '';
+  const image = payload.image || '';
+  const path = payload.path || '/';
+  const actions = [
+    { label: 'Back to Images', fn: () => renderSkydnirImagesPanel(currentImagesPayload) },
+    { label: 'Image roots', fn: () => renderImageFilesRoot() },
+    { label: 'Refresh', fn: () => openImageFiles(image, path) }
+  ];
+  if (payload.parent) actions.push({ label: 'Up', fn: () => openImageFiles(image, payload.parent) });
+  const top = renderImageFilesToolbar(skydnirImagesBody, image ? `Image files: ${image}` : 'Image files', actions);
+  renderImagePath(top, path);
+  if (payload.summary) addImageMessage(top, payload.summary);
+  if (payload.error) { addImageMessage(skydnirImagesBody, 'Error: ' + payload.error); return; }
+  const entries = Array.isArray(payload.entries) ? payload.entries : [];
+  if (!entries.length) { addImageMessage(skydnirImagesBody, 'No files in this directory.'); return; }
+  const list = document.createElement('div'); list.className = 'imageFileList';
+  entries.forEach(entry => {
+    const isDir = entry.type === 'dir';
+    const isFile = entry.previewable === true;
+    imageFileRow(list, entry.type || 'file', entry.name || entry.path || '', entry.detail || '', isDir ? 'Open' : 'Preview', () => {
+      if (isDir) openImageFiles(image, entry.path);
+      else if (isFile) openImageFilePreview(image, entry.path, path);
+      else setStatus('Skydnir image file is not previewable');
+    });
+  });
+  skydnirImagesBody.appendChild(list);
+}
+function openImageFilePreview(imageRef, path, backPath) {
+  const payload = imageBridgeJson('readDockerImageFile', imageRef, path || '/');
+  renderImageFilePreview(Object.assign({ backPath: backPath || '/' }, payload));
+}
+function renderImageFilePreview(payload={}) {
+  skydnirImagesBody.textContent = '';
+  const image = payload.image || '';
+  const path = payload.path || '/';
+  const backPath = payload.backPath || '/';
+  const actions = [
+    { label: 'Back', fn: () => openImageFiles(image, backPath) },
+    { label: 'Image roots', fn: () => renderImageFilesRoot() },
+    { label: 'Copy to project', fn: () => copyImageFileToProject(image, path), disabled: !!payload.error || !!payload.binary || !!payload.tooLarge }
+  ];
+  const top = renderImageFilesToolbar(skydnirImagesBody, image ? `Image file: ${image}` : 'Image file', actions);
+  renderImagePath(top, path);
+  if (payload.detail) addImageMessage(top, payload.detail);
+  if (payload.error) { addImageMessage(skydnirImagesBody, 'Error: ' + payload.error); return; }
+  if (payload.binary) { addImageMessage(skydnirImagesBody, 'Binary preview hidden.'); return; }
+  if (payload.tooLarge) { addImageMessage(skydnirImagesBody, 'Preview skipped because the file is larger than 64 KiB.'); return; }
+  const pre = document.createElement('pre'); pre.className = 'imageFilePreview'; pre.textContent = payload.text || '';
+  skydnirImagesBody.appendChild(pre);
+}
+function copyImageFileToProject(imageRef, path) {
+  const result = imageBridgeJson('copyDockerImageFileToProject', imageRef, path || '/');
+  if (result.error) setStatus('Skydnir image copy failed: ' + result.error);
+  else setStatus('Skydnir image file copied: ' + (result.projectRelative || result.target || path));
+}
+document.getElementById('skydnirImagesClose').onclick = closeSkydnirImagesPanel;
+document.getElementById('skydnirImagesRefresh').onclick = () => openSkydnirImagesPanel(true);
 const sessions = document.getElementById('sessions');
-function refreshSessions() { for (const [i,b] of [...sessions.children].entries()) b.classList.toggle('active', i === active().session); }
+function refreshSessions() {
+  for (const [i,b] of [...sessions.children].entries()) {
+    b.classList.toggle('active', i === active().session);
+    b.classList.toggle('sessionHidden', visiblePaneForSession(i) < 0);
+  }
+}
 for (let i=0; i<SESSION_COUNT; i++) { const b=document.createElement('button'); b.textContent='S'+(i+1); b.onclick=()=>switchPaneSession(activePane, i, true); sessions.appendChild(b); }
 refreshSessions();
 function refreshAutoYesButton() {
@@ -1819,7 +2500,7 @@ function applySplitState(countOrEnabled, persist=true) {
   document.body.classList.toggle('split4', splitCount === 4);
   refreshSplitButton();
   if (!isPaneVisible(activePane)) setActivePane(0);
-  else { if (panes[activePane]) panes[activePane].lastActiveAt = Date.now(); panes.forEach((_, i) => document.getElementById('pane' + i).classList.toggle('active', activePane === i)); refreshSessions(); }
+  else { if (panes[activePane]) panes[activePane].lastActiveAt = Date.now(); panes.forEach((_, i) => document.getElementById("pane" + i).classList.toggle("active", activePane === i)); refreshSessions(); updatePaneTitles(); }
   if (persist) saveLayout();
   relayout('split');
   requestAnimationFrame(() => relayout('split-frame'));
@@ -1828,8 +2509,95 @@ function applySplitState(countOrEnabled, persist=true) {
 function nextSplitCount() { return splitCount === 1 ? 2 : splitCount === 2 ? 4 : 1; }
 document.getElementById('split').onclick = () => applySplitState(nextSplitCount(), true);
 document.getElementById('redraw').onclick = () => { try { active().term.refresh(); } catch (_) {} relayout('redraw'); };
-document.getElementById('connect').onclick = () => Android.connectSession(active().session);
-document.getElementById('skydnir').onclick = () => { if (dockerBarOpen) setDockerBarOpen(false); else requestDockerContainers(); };
+const skydnirEditor = document.getElementById('skydnirEditor');
+const skydnirDockerfile = document.getElementById('skydnirDockerfile');
+const skydnirCompose = document.getElementById('skydnirCompose');
+function closeSkydnirEditor() {
+  skydnirEditor.classList.remove('open');
+  refocusActiveSoon();
+}
+function editSkydnirProject() {
+  try { closeSkydnirImagesPanel(); } catch (_) {}
+  let payload = {};
+  try { payload = JSON.parse(Android.loadSkydnirProjectFiles() || '{}'); } catch (_) {}
+  skydnirDockerfile.value = payload.dockerfile || '';
+  skydnirCompose.value = payload.compose || '';
+  skydnirEditor.classList.add('open');
+  skydnirCompose.focus();
+}
+document.getElementById('skydnirEditorClose').onclick = closeSkydnirEditor;
+document.getElementById('skydnirEditorSave').onclick = () => {
+  try {
+    if (Android.saveSkydnirProjectFiles(skydnirDockerfile.value, skydnirCompose.value)) { setStatus('Skydnir project saved'); closeSkydnirEditor(); }
+    else setStatus('Skydnir project save failed');
+  } catch (_) { setStatus('Skydnir project save failed'); }
+};
+function buildSkydnirProject(source) {
+  setDockerBarOpen(false);
+  try { Android.buildSkydnirProject(skydnirActionSession(source)); } catch (_) { setStatus('Skydnir build failed'); }
+}
+function runSkydnirProject(source) {
+  setDockerBarOpen(false);
+  try { Android.runSkydnirProject(skydnirActionSession(source)); } catch (_) { setStatus('Skydnir run failed'); }
+}
+function connectSkydnirProject(source) {
+  setDockerBarOpen(false);
+  const s = skydnirActionSession(source);
+  updateSessionTitle(s, { backend:'Skydnir', target:dockerEndpoint(), state:'connecting' });
+  try { Android.connectSkydnir(s); } catch (_) { setStatus('Skydnir connect failed'); }
+}
+document.getElementById("connect").onclick = () => { const s = active().session; updateSessionTitle(s, { backend:"Termux", target:defaultTermuxTarget(s), state:"connecting" }); Android.connectSession(s); };
+function setSkydnirActionsOpen(open, paneIndex=activePane) {
+  const enabled = !!open;
+  if (enabled) setSkydnirMenuPane(paneIndex);
+  else setSkydnirMenuPane(-1);
+  document.body.classList.toggle('skydnirActions', enabled);
+  document.getElementById('skydnir').classList.toggle('active', enabled);
+  relayout('skydnir-actions');
+}
+document.getElementById('skydnir').onclick = () => setSkydnirActionsOpen(!document.body.classList.contains('skydnirActions'), activePane);
+document.querySelectorAll('.skydnirConnect').forEach(b => b.onclick = ev => connectSkydnirProject(ev));
+document.querySelectorAll('.skydnirEdit').forEach(b => b.onclick = editSkydnirProject);
+document.querySelectorAll('.skydnirBuild').forEach(b => b.onclick = ev => buildSkydnirProject(ev));
+document.querySelectorAll('.skydnirRun').forEach(b => b.onclick = ev => runSkydnirProject(ev));
+document.querySelectorAll('.skydnirList').forEach(b => b.onclick = () => { if (dockerBarOpen && dockerBarMode === 'containers') setDockerBarOpen(false); else requestDockerContainers(); });
+document.querySelectorAll('.skydnirImages').forEach(b => b.onclick = () => { if (dockerBarOpen && dockerBarMode === 'images') setDockerBarOpen(false); else requestDockerImages(); });
+window.termportDebug = {
+  setSplit:n => applySplitState(n, true),
+  setActivePane:i => setActivePane(i),
+  openSkydnirForPane:i => setSkydnirActionsOpen(true, i),
+  closeSkydnir:() => setSkydnirActionsOpen(false),
+  menuPane:() => skydnirActionsPane,
+  menuSession:() => skydnirMenuSession(),
+  actionSession:paneIndex => skydnirActionSession(paneIndex),
+  state:() => ({ activePane, skydnirActionsPane, menuSession:skydnirMenuSession(), dockerBarOpen, dockerBarMode, editorOpen:skydnirEditor.classList.contains('open'), imagesOpen:skydnirImagesPanel.classList.contains('open') }),
+  edit:() => editSkydnirProject(),
+  build:paneIndex => buildSkydnirProject(paneIndex),
+  run:paneIndex => runSkydnirProject(paneIndex),
+  connect:paneIndex => connectSkydnirProject(paneIndex),
+  list:() => requestDockerContainers(),
+  images:() => requestDockerImages(),
+  fontMetrics:() => panes.map((p, i) => Object.assign({ pane:i, visible:isPaneVisible(i), active:i === activePane }, p.term && p.term.fontMetrics ? p.term.fontMetrics() : {})),
+  debugFontMetrics:(sizes=[7,6,5]) => {
+    const original = fontSize;
+    const out = [];
+    for (const value of sizes) {
+      fontSize = clampFontSize(Number(value));
+      fitAll('debug-font', false, false);
+      const term = active().term;
+      out.push(Object.assign({ requested:Number(value), fontSize }, term && term.fontMetrics ? term.fontMetrics() : {}));
+    }
+    fontSize = original;
+    fitAll('debug-font-restore', false, false);
+    return out;
+  },
+  imageFiles:() => renderImageFilesRoot(),
+  openImageFiles:(image, path='/') => openImageFiles(image, path),
+  renderImages:payload => window.setDockerImages(payload || {}),
+  renderImageFiles:payload => renderImageFiles(payload || {}),
+  renderImageFilePreview:payload => renderImageFilePreview(payload || {}),
+  imageLabels:() => [...skydnirImagesBody.querySelectorAll('.imageRowTitle,.imageWidgetValue,.imageMessage,.imageFileName,.imageFileDetail,.imagePath,button')].map(b => b.textContent)
+};
 setTimeout(() => {
   const saved = loadLayout();
   if (typeof saved.splitCount === 'number') splitCount = saved.splitCount;
@@ -1838,7 +2606,7 @@ setTimeout(() => {
   if (typeof saved.fontSize === 'number') fontSize = clampFontSize(saved.fontSize);
   autoYesProceed = saved.autoYesProceed === true;
   refreshAutoYesButton();
-  if (saved.viewStates && typeof saved.viewStates === 'object') Object.assign(sessionViewStates, saved.viewStates);
+  restoringInitialLayout = true;
   applySplitState(splitCount, false);
   if (Array.isArray(saved.sessions)) {
     for (let i=0; i<Math.min(saved.sessions.length, panes.length); i++) {
@@ -1847,9 +2615,9 @@ setTimeout(() => {
     }
   }
   const pane = Math.max(0, Math.min(visiblePaneCount() - 1, Number(saved.activePane) || 0));
-  relayout('init');
-  for (const p of panes) Android.connectSession(p.session);
+  relayout('init', [], 'cursor', true, false);
   setActivePane(pane);
+  setTimeout(() => { restoringInitialLayout = false; rememberVisiblePaneViews(); saveLayout(); }, 900);
 }, 350);
 </script>
 </body>

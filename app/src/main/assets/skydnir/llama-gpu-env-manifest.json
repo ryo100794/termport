@@ -1,0 +1,635 @@
+{
+  "schema": "pdocker.llama.gpu.env-manifest.v1",
+  "q6_required_env_overlay": {
+    "PDOCKER_GPU_CPU_ORACLE": "1",
+    "PDOCKER_GPU_STRICT_PASSTHROUGH": "1",
+    "PDOCKER_GPU_STRICT_RECONCILIATION": "1",
+    "PDOCKER_GPU_STRICT_DUPLICATE_DESCRIPTOR_NORMALIZATION": "1",
+    "PDOCKER_GPU_LEGALIZE_WORKGROUP_SIZE_FROM_SPEC": "1",
+    "PDOCKER_GPU_MATERIALIZE_SPIRV_SPECIALIZATION_CONSTANTS": "1",
+    "PDOCKER_GPU_DISPATCH_PROFILE_LOG": "1",
+    "PDOCKER_GPU_DISPATCH_PROFILE_RESPONSE": "1",
+    "PDOCKER_GPU_STRICT_DEVICE_LOCAL_STAGING": "1",
+    "PDOCKER_GPU_Q6K_COMPAT_REWRITES": "1",
+    "PDOCKER_GPU_Q6K_READONLY_OVERLAP_SNAPSHOT": "1"
+  },
+  "ui_runtime_env_keys": [
+    "GGML_VK_FORCE_MAX_ALLOCATION_SIZE",
+    "GGML_VK_FORCE_MAX_BUFFER_SIZE",
+    "GGML_VK_SUBALLOCATION_BLOCK_SIZE",
+    "PDOCKER_GPU_DISABLE_PIPELINE_OPTIMIZATION",
+    "PDOCKER_GPU_Q6K_COMPAT_REWRITES",
+    "PDOCKER_GPU_Q6K_ORACLE_WRITEBACK",
+    "PDOCKER_GPU_Q6K_READONLY_OVERLAP_SNAPSHOT",
+    "PDOCKER_GPU_Q6K_SAFE_KERNEL",
+    "PDOCKER_GPU_RESIDENT_CACHE",
+    "PDOCKER_GPU_RESIDENT_CACHE_MIN_BYTES",
+    "PDOCKER_GPU_REWRITE_DUPLICATE_DESCRIPTOR_BINDINGS",
+    "PDOCKER_GPU_STRICT_GRAPH_CACHE",
+    "PDOCKER_VULKAN_DISABLE_8BIT_STORAGE",
+    "PDOCKER_VULKAN_HEAP_BYTES",
+    "PDOCKER_VULKAN_MAX_BUFFER_BYTES"
+  ],
+  "pdockerd_runtime_env_defaults": [
+    {
+      "env": "PDOCKER_VULKAN_DISABLE_8BIT_STORAGE",
+      "default": "0",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_GPU_REWRITE_DUPLICATE_DESCRIPTOR_BINDINGS",
+      "default": "1",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_GPU_MATERIALIZE_DESCRIPTOR_ALIASES",
+      "default": "0",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_GPU_RESIDENT_CACHE",
+      "default": "1",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_GPU_RESIDENT_CACHE_MIN_BYTES",
+      "default": "1048576",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_GPU_STRICT_GRAPH_CACHE",
+      "default": "1",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_ORACLE_WRITEBACK",
+      "default": "0",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_SAFE_KERNEL",
+      "default": "0",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_GPU_DISABLE_PIPELINE_OPTIMIZATION",
+      "default": "0",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_VULKAN_HEAP_BYTES",
+      "default": "2147483648",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_VULKAN_MAX_BUFFER_BYTES",
+      "default": "2147483648",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "GGML_VK_FORCE_MAX_BUFFER_SIZE",
+      "default_from": "PDOCKER_VULKAN_MAX_BUFFER_BYTES",
+      "default": "2147483648",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "GGML_VK_FORCE_MAX_ALLOCATION_SIZE",
+      "default_from": "PDOCKER_VULKAN_MAX_BUFFER_BYTES",
+      "default": "2147483648",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "GGML_VK_SUBALLOCATION_BLOCK_SIZE",
+      "default": "268435456",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_COMPAT_REWRITES",
+      "default": "0",
+      "modes": [
+        "vulkan"
+      ]
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_READONLY_OVERLAP_SNAPSHOT",
+      "default": "0",
+      "modes": [
+        "vulkan"
+      ]
+    }
+  ],
+  "ui_compose_runtime_env_defaults": [
+    {
+      "env": "PDOCKER_GPU_DISABLE_PIPELINE_OPTIMIZATION",
+      "default": "0"
+    },
+    {
+      "env": "PDOCKER_VULKAN_MAX_BUFFER_BYTES",
+      "default": "536870912"
+    },
+    {
+      "env": "GGML_VK_FORCE_MAX_BUFFER_SIZE",
+      "default": "536870912"
+    },
+    {
+      "env": "GGML_VK_FORCE_MAX_ALLOCATION_SIZE",
+      "default": "536870912"
+    },
+    {
+      "env": "GGML_VK_SUBALLOCATION_BLOCK_SIZE",
+      "default": "536870912"
+    }
+  ],
+  "compare_forward_env_keys": [
+    "GGML_VK_FORCE_MAX_ALLOCATION_SIZE",
+    "GGML_VK_FORCE_MAX_BUFFER_SIZE",
+    "GGML_VK_SUBALLOCATION_BLOCK_SIZE",
+    "PDOCKER_GPU_ADD_FLOAT16_CAPABILITY_FOR_STORAGE16",
+    "PDOCKER_GPU_CHAIN_COMPAT_FEATURE_STRUCTS",
+    "PDOCKER_GPU_CPU_ORACLE",
+    "PDOCKER_GPU_DISABLE_OVERLAP_ALIASING",
+    "PDOCKER_GPU_DISABLE_PIPELINE_OPTIMIZATION",
+    "PDOCKER_GPU_DISPATCH_PROFILE_LOG",
+    "PDOCKER_GPU_DISPATCH_PROFILE_RESPONSE",
+    "PDOCKER_GPU_FAILED_SPIRV_DIR",
+    "PDOCKER_GPU_LEGALIZE_WORKGROUP_SIZE_FROM_SPEC",
+    "PDOCKER_GPU_MATERIALIZE_DESCRIPTOR_ALIASES",
+    "PDOCKER_GPU_MATERIALIZE_SPIRV_SPECIALIZATION_CONSTANTS",
+    "PDOCKER_GPU_MUTABLE_BUFFER_CACHE",
+    "PDOCKER_GPU_MUTABLE_BUFFER_CACHE_MAX_BYTES",
+    "PDOCKER_GPU_Q4K_PIPELINE_RETRY_LADDER",
+    "PDOCKER_GPU_Q4K_SAFE_KERNEL",
+    "PDOCKER_GPU_Q4K_TARGETED_SPECIALIZATION",
+    "PDOCKER_GPU_Q6K_COMPAT_REWRITES",
+    "PDOCKER_GPU_Q6K_ORACLE_WRITEBACK",
+    "PDOCKER_GPU_Q6K_READONLY_OVERLAP_SNAPSHOT",
+    "PDOCKER_GPU_Q6K_SAFE_KERNEL",
+    "PDOCKER_GPU_RESIDENT_CACHE",
+    "PDOCKER_GPU_RESIDENT_CACHE_MIN_BYTES",
+    "PDOCKER_GPU_RETRY_MATERIALIZE_SPECIALIZATION",
+    "PDOCKER_GPU_REWRITE_DUPLICATE_DESCRIPTOR_BINDINGS",
+    "PDOCKER_GPU_SKIP_UNUSED_DESCRIPTOR_TRANSFERS",
+    "PDOCKER_GPU_SPIRV_DUMP_DIR",
+    "PDOCKER_GPU_SPIRV_PROBE_DEBUG_BINDING",
+    "PDOCKER_GPU_SPIRV_PROBE_DEBUG_BYTES",
+    "PDOCKER_GPU_SPIRV_PROBE_DEBUG_SET",
+    "PDOCKER_GPU_SPIRV_PROBE_EFFECTIVE_HASH",
+    "PDOCKER_GPU_SPIRV_PROBE_EXPECTED_HASH",
+    "PDOCKER_GPU_SPIRV_PROBE_MANIFEST",
+    "PDOCKER_GPU_SPIRV_PROBE_SHADER",
+    "PDOCKER_GPU_SPIRV_PROBE_TARGET_ONLY",
+    "PDOCKER_GPU_STRICT_DEVICE_LOCAL_STAGING",
+    "PDOCKER_GPU_STRICT_DUPLICATE_DESCRIPTOR_NORMALIZATION",
+    "PDOCKER_GPU_STRICT_GRAPH_CACHE",
+    "PDOCKER_GPU_STRICT_PASSTHROUGH",
+    "PDOCKER_GPU_STRICT_RECONCILIATION",
+    "PDOCKER_GPU_UNSAFE_DIRTY_WRITEBACK_CACHE",
+    "PDOCKER_GPU_USE_SPIRV_DESCRIPTOR_ACCESS",
+    "PDOCKER_GPU_VIRTUAL_MEMORY",
+    "PDOCKER_GPU_VIRTUAL_MEMORY_MIN_BYTES",
+    "PDOCKER_GPU_WRITEBACK_FULL_HASH_MAX_BYTES",
+    "PDOCKER_GPU_WRITEONLY_BUFFER_CACHE",
+    "PDOCKER_GPU_WRITEONLY_DIRTY_PROBE",
+    "PDOCKER_GPU_WRITEONLY_DIRTY_PROBE_MIN_BYTES",
+    "PDOCKER_GPU_WRITEONLY_DIRTY_WRITEBACK",
+    "PDOCKER_VULKAN_ADVERTISEMENT_SOURCE",
+    "PDOCKER_VULKAN_ALIAS_COPIES",
+    "PDOCKER_VULKAN_DISABLE_16BIT_STORAGE",
+    "PDOCKER_VULKAN_DISABLE_8BIT_STORAGE",
+    "PDOCKER_VULKAN_DISABLE_SUBGROUP_ARITHMETIC",
+    "PDOCKER_VULKAN_ENABLE_16BIT_STORAGE",
+    "PDOCKER_VULKAN_ENABLE_8BIT_STORAGE",
+    "PDOCKER_VULKAN_ENABLE_INT64",
+    "PDOCKER_VULKAN_ENABLE_SUBGROUP_ARITHMETIC",
+    "PDOCKER_VULKAN_ENABLE_V5_OBJECT_TRANSPORT",
+    "PDOCKER_VULKAN_HEAP_BYTES",
+    "PDOCKER_VULKAN_ICD_DEBUG",
+    "PDOCKER_VULKAN_MAX_BUFFER_BYTES",
+    "PDOCKER_VULKAN_SUBGROUP_SIZE",
+    "PDOCKER_VULKAN_USE_V5_FRAME"
+  ],
+  "compare_probe_env_keys": [
+    "PDOCKER_GPU_SPIRV_PROBE_MANIFEST",
+    "PDOCKER_GPU_SPIRV_PROBE_SHADER",
+    "PDOCKER_GPU_SPIRV_PROBE_EXPECTED_HASH",
+    "PDOCKER_GPU_SPIRV_PROBE_EFFECTIVE_HASH",
+    "PDOCKER_GPU_SPIRV_PROBE_DEBUG_BYTES",
+    "PDOCKER_GPU_SPIRV_PROBE_DEBUG_SET",
+    "PDOCKER_GPU_SPIRV_PROBE_DEBUG_BINDING",
+    "PDOCKER_GPU_SPIRV_PROBE_TARGET_ONLY"
+  ],
+  "config_propagation_env_fields": [
+    {
+      "env": "PDOCKER_GPU_REWRITE_DUPLICATE_DESCRIPTOR_BINDINGS",
+      "executor_field": "duplicate_descriptor_rewrite"
+    },
+    {
+      "env": "PDOCKER_GPU_MATERIALIZE_SPIRV_SPECIALIZATION_CONSTANTS",
+      "executor_field": "materialize_specialization",
+      "evidence_policy": "q6_callsite_gated"
+    },
+    {
+      "env": "PDOCKER_GPU_DISABLE_PIPELINE_OPTIMIZATION",
+      "executor_field": "disable_pipeline_optimization"
+    },
+    {
+      "env": "PDOCKER_GPU_STRICT_PASSTHROUGH",
+      "executor_field": "strict_passthrough"
+    },
+    {
+      "env": "PDOCKER_GPU_SKIP_UNUSED_DESCRIPTOR_TRANSFERS",
+      "executor_field": "skip_unused_descriptor_transfers"
+    },
+    {
+      "env": "PDOCKER_GPU_USE_SPIRV_DESCRIPTOR_ACCESS",
+      "executor_field": "spirv_descriptor_access"
+    },
+    {
+      "env": "PDOCKER_GPU_DISABLE_OVERLAP_ALIASING",
+      "executor_field": "disable_overlap_aliasing"
+    },
+    {
+      "env": "PDOCKER_GPU_CPU_ORACLE",
+      "executor_field": "cpu_oracle_requested"
+    },
+    {
+      "env": "PDOCKER_GPU_STRICT_DEVICE_LOCAL_STAGING",
+      "executor_field": "strict_object_graph.device_local_staging_requested"
+    },
+    {
+      "env": "PDOCKER_GPU_STRICT_DUPLICATE_DESCRIPTOR_NORMALIZATION",
+      "executor_field": "strict_duplicate_descriptor_normalization"
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_SAFE_KERNEL",
+      "executor_field": "q6k_safe_kernel",
+      "evidence_policy": "callsite_gated"
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_ORACLE_WRITEBACK",
+      "executor_field": "cpu_oracle.oracle_writeback",
+      "evidence_policy": "callsite_gated"
+    },
+    {
+      "env": "PDOCKER_GPU_Q4K_SAFE_KERNEL",
+      "executor_field": "q4k_safe_kernel",
+      "evidence_policy": "callsite_gated"
+    },
+    {
+      "env": "PDOCKER_GPU_Q4K_TARGETED_SPECIALIZATION",
+      "executor_field": "q4k_targeted_specialization_materialized",
+      "evidence_policy": "callsite_gated"
+    },
+    {
+      "env": "PDOCKER_GPU_Q4K_PIPELINE_RETRY_LADDER",
+      "executor_field": "q4k_pipeline_retry_ladder",
+      "evidence_policy": "q4k_callsite_gated"
+    },
+    {
+      "env": "PDOCKER_GPU_LEGALIZE_WORKGROUP_SIZE_FROM_SPEC",
+      "executor_field": "legalize_workgroup_size_from_spec"
+    },
+    {
+      "env": "PDOCKER_GPU_ADD_FLOAT16_CAPABILITY_FOR_STORAGE16",
+      "executor_field": "float16_capability_added"
+    },
+    {
+      "env": "PDOCKER_GPU_MUTABLE_BUFFER_CACHE",
+      "executor_field": "mutable_buffer_cache.enabled"
+    },
+    {
+      "env": "PDOCKER_GPU_STRICT_GRAPH_CACHE",
+      "executor_field": "strict_object_graph.cache_enabled"
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_COMPAT_REWRITES",
+      "executor_field": "q6_compat_rewrites"
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_READONLY_OVERLAP_SNAPSHOT",
+      "executor_field": "readonly_overlap_snapshot_policy.q6_auto"
+    }
+  ],
+  "abi_dispatch_option_env_fields": [
+    {
+      "env": "PDOCKER_GPU_ADD_FLOAT16_CAPABILITY_FOR_STORAGE16",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_CPU_ORACLE",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_DISABLE_OVERLAP_ALIASING",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_DISABLE_PIPELINE_OPTIMIZATION",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_DISPATCH_PROFILE_RESPONSE",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_LEGALIZE_WORKGROUP_SIZE_FROM_SPEC",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_MATERIALIZE_DESCRIPTOR_ALIASES",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_MATERIALIZE_SPIRV_SPECIALIZATION_CONSTANTS",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_MUTABLE_BUFFER_CACHE",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_Q4K_PIPELINE_RETRY_LADDER",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_Q4K_SAFE_KERNEL",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_Q4K_TARGETED_SPECIALIZATION",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_COMPAT_REWRITES",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_ORACLE_WRITEBACK",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_READONLY_OVERLAP_SNAPSHOT",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_Q6K_SAFE_KERNEL",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_RESIDENT_CACHE",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_REWRITE_DUPLICATE_DESCRIPTOR_BINDINGS",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_SKIP_UNUSED_DESCRIPTOR_TRANSFERS",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_STRICT_DEVICE_LOCAL_STAGING",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_STRICT_DUPLICATE_DESCRIPTOR_NORMALIZATION",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_STRICT_GRAPH_CACHE",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_STRICT_PASSTHROUGH",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_STRICT_RECONCILIATION",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_USE_SPIRV_DESCRIPTOR_ACCESS",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_WRITEONLY_BUFFER_CACHE",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_WRITEONLY_DIRTY_PROBE",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_WRITEONLY_DIRTY_WRITEBACK",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_VULKAN_DISABLE_16BIT_STORAGE",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_VULKAN_DISABLE_8BIT_STORAGE",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_VULKAN_DISABLE_SUBGROUP_ARITHMETIC",
+      "type": "bool"
+    },
+    {
+      "env": "PDOCKER_GPU_MUTABLE_BUFFER_CACHE_MAX_BYTES",
+      "type": "size"
+    },
+    {
+      "env": "PDOCKER_GPU_RESIDENT_CACHE_MIN_BYTES",
+      "type": "size"
+    },
+    {
+      "env": "PDOCKER_GPU_SPIRV_PROBE_DEBUG_BINDING",
+      "type": "size"
+    },
+    {
+      "env": "PDOCKER_GPU_WRITEONLY_DIRTY_PROBE_MIN_BYTES",
+      "type": "size"
+    }
+  ],
+  "env_bridge_classifications": {
+    "container_env_only": [
+      "GGML_VK_FORCE_MAX_ALLOCATION_SIZE",
+      "GGML_VK_FORCE_MAX_BUFFER_SIZE",
+      "GGML_VK_SUBALLOCATION_BLOCK_SIZE",
+      "LLAMA_ARG_N_GPU_LAYERS",
+      "PDOCKER_GPU_SPIRV_DUMP_DIR",
+      "PDOCKER_GPU_VIRTUAL_MEMORY",
+      "PDOCKER_GPU_VIRTUAL_MEMORY_MIN_BYTES",
+      "PDOCKER_VULKAN_ADVERTISEMENT_SOURCE",
+      "PDOCKER_VULKAN_ALIAS_COPIES",
+      "PDOCKER_VULKAN_DUMP_SPIRV_DIR",
+      "PDOCKER_VULKAN_ENABLE_16BIT_STORAGE",
+      "PDOCKER_VULKAN_ENABLE_8BIT_STORAGE",
+      "PDOCKER_VULKAN_ENABLE_INT64",
+      "PDOCKER_VULKAN_ENABLE_SUBGROUP_ARITHMETIC",
+      "PDOCKER_VULKAN_ENABLE_V5_OBJECT_TRANSPORT",
+      "PDOCKER_VULKAN_HEAP_BYTES",
+      "PDOCKER_VULKAN_ICD_DEBUG",
+      "PDOCKER_VULKAN_ICD_TRACE_ALLOC",
+      "PDOCKER_VULKAN_MAX_BUFFER_BYTES",
+      "PDOCKER_VULKAN_SUBGROUP_SIZE",
+      "PDOCKER_VULKAN_USE_V5_FRAME"
+    ],
+    "icd_to_executor_bool_option": [
+      "PDOCKER_GPU_ADD_FLOAT16_CAPABILITY_FOR_STORAGE16",
+      "PDOCKER_GPU_CPU_ORACLE",
+      "PDOCKER_GPU_DISABLE_OVERLAP_ALIASING",
+      "PDOCKER_GPU_DISABLE_PIPELINE_OPTIMIZATION",
+      "PDOCKER_GPU_DISPATCH_PROFILE_RESPONSE",
+      "PDOCKER_GPU_LEGALIZE_WORKGROUP_SIZE_FROM_SPEC",
+      "PDOCKER_GPU_MATERIALIZE_DESCRIPTOR_ALIASES",
+      "PDOCKER_GPU_MATERIALIZE_SPIRV_SPECIALIZATION_CONSTANTS",
+      "PDOCKER_GPU_MUTABLE_BUFFER_CACHE",
+      "PDOCKER_GPU_Q4K_PIPELINE_RETRY_LADDER",
+      "PDOCKER_GPU_Q4K_SAFE_KERNEL",
+      "PDOCKER_GPU_Q4K_TARGETED_SPECIALIZATION",
+      "PDOCKER_GPU_Q6K_COMPAT_REWRITES",
+      "PDOCKER_GPU_Q6K_ORACLE_WRITEBACK",
+      "PDOCKER_GPU_Q6K_READONLY_OVERLAP_SNAPSHOT",
+      "PDOCKER_GPU_Q6K_SAFE_KERNEL",
+      "PDOCKER_GPU_RESIDENT_CACHE",
+      "PDOCKER_GPU_REWRITE_DUPLICATE_DESCRIPTOR_BINDINGS",
+      "PDOCKER_GPU_SKIP_UNUSED_DESCRIPTOR_TRANSFERS",
+      "PDOCKER_GPU_STRICT_DEVICE_LOCAL_STAGING",
+      "PDOCKER_GPU_STRICT_DUPLICATE_DESCRIPTOR_NORMALIZATION",
+      "PDOCKER_GPU_STRICT_GRAPH_CACHE",
+      "PDOCKER_GPU_STRICT_PASSTHROUGH",
+      "PDOCKER_GPU_STRICT_RECONCILIATION",
+      "PDOCKER_GPU_USE_SPIRV_DESCRIPTOR_ACCESS",
+      "PDOCKER_GPU_WRITEONLY_BUFFER_CACHE",
+      "PDOCKER_GPU_WRITEONLY_DIRTY_PROBE",
+      "PDOCKER_GPU_WRITEONLY_DIRTY_WRITEBACK",
+      "PDOCKER_VULKAN_DISABLE_16BIT_STORAGE",
+      "PDOCKER_VULKAN_DISABLE_8BIT_STORAGE",
+      "PDOCKER_VULKAN_DISABLE_SUBGROUP_ARITHMETIC"
+    ],
+    "icd_to_executor_size_option": [
+      "PDOCKER_GPU_MUTABLE_BUFFER_CACHE_MAX_BYTES",
+      "PDOCKER_GPU_RESIDENT_CACHE_MIN_BYTES",
+      "PDOCKER_GPU_SPIRV_PROBE_DEBUG_BINDING",
+      "PDOCKER_GPU_WRITEONLY_DIRTY_PROBE_MIN_BYTES"
+    ],
+    "icd_to_executor_string_option": [],
+    "app_process_only": [
+      "PDOCKER_ANDROID_OPENCL_LIBRARY",
+      "PDOCKER_GPU_DISABLE_ANDROID_OPENCL",
+      "PDOCKER_GPU_DISABLE_ANDROID_VULKAN"
+    ],
+    "deprecated_or_invalid": [],
+    "needs_bridge": [
+      "PDOCKER_GPU_CHAIN_COMPAT_FEATURE_STRUCTS",
+      "PDOCKER_GPU_DISPATCH_PROFILE_LOG",
+      "PDOCKER_GPU_FAILED_SPIRV_DIR",
+      "PDOCKER_GPU_RETRY_MATERIALIZE_SPECIALIZATION",
+      "PDOCKER_GPU_UNSAFE_DIRTY_WRITEBACK_CACHE",
+      "PDOCKER_GPU_WRITEBACK_FULL_HASH_MAX_BYTES"
+    ],
+    "spirv_probe_transport": [
+      "PDOCKER_GPU_SPIRV_PROBE_MANIFEST",
+      "PDOCKER_GPU_SPIRV_PROBE_SHADER",
+      "PDOCKER_GPU_SPIRV_PROBE_EXPECTED_HASH",
+      "PDOCKER_GPU_SPIRV_PROBE_EFFECTIVE_HASH",
+      "PDOCKER_GPU_SPIRV_PROBE_DEBUG_BYTES",
+      "PDOCKER_GPU_SPIRV_PROBE_DEBUG_SET",
+      "PDOCKER_GPU_SPIRV_PROBE_DEBUG_BINDING",
+      "PDOCKER_GPU_SPIRV_PROBE_TARGET_ONLY"
+    ]
+  },
+  "unsupported_gpu_work_tokens": [
+    "unsupported",
+    "kernel-not-implemented-yet",
+    "not-implemented",
+    "unimplemented"
+  ],
+  "compare_mode_env_profiles": {
+    "vulkan-raw": {
+      "env": [
+        {
+          "env": "PDOCKER_VULKAN_MAX_BUFFER_BYTES",
+          "default": "536870912"
+        },
+        {
+          "env": "PDOCKER_VULKAN_DUMP_SPIRV_DIR",
+          "default": "/workspace/logs"
+        },
+        {
+          "env": "PDOCKER_GPU_FAILED_SPIRV_DIR",
+          "default_template": "{workspace_host}/logs"
+        },
+        {
+          "env": "PDOCKER_GPU_DISPATCH_PROFILE_LOG",
+          "default": "1"
+        },
+        {
+          "env": "PDOCKER_GPU_STRICT_PASSTHROUGH",
+          "default": "1",
+          "host_override": true
+        },
+        {
+          "env": "GGML_VK_FORCE_MAX_BUFFER_SIZE",
+          "default": "536870912"
+        },
+        {
+          "env": "GGML_VK_FORCE_MAX_ALLOCATION_SIZE",
+          "default": "536870912"
+        },
+        {
+          "env": "GGML_VK_SUBALLOCATION_BLOCK_SIZE",
+          "default": "536870912"
+        },
+        {
+          "env": "LLAMA_ARG_N_GPU_LAYERS",
+          "default_template": "{gpu_layers}"
+        },
+        {
+          "env": "PDOCKER_GPU_SPIRV_DUMP_DIR",
+          "default_template": "{workspace_host}/logs"
+        }
+      ],
+      "trace_alloc_env": [
+        {
+          "env": "PDOCKER_VULKAN_ICD_TRACE_ALLOC",
+          "default": "1"
+        },
+        {
+          "env": "PDOCKER_GPU_DISPATCH_PROFILE_RESPONSE",
+          "default": "1"
+        }
+      ]
+    }
+  }
+}
