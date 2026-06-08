@@ -30,11 +30,18 @@
   .selectionRect { position:absolute; background:rgba(47,126,219,.55); mix-blend-mode:screen; }
   .selectionHandle { display:none; position:absolute; width:24px; height:24px; border-radius:50%; background:#ffffff; border:2px solid #0b5cad; box-shadow:0 1px 5px rgba(0,0,0,.55); z-index:6; pointer-events:auto; touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; transform:translate(-50%, -50%); }
   .selectionHandle.visible { display:block; }
-  body.single .pane:not(#pane0), body.split2 #pane2, body.split2 #pane3 { display:none; }
-  body.split4 #terms { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-rows:minmax(0,1fr) minmax(0,1fr); }
-  body.split4 .pane { border-top:1px solid #293039; border-left:1px solid #293039; }
-  body.split4 #pane0, body.split4 #pane1 { border-top:0; }
-  body.split4 #pane0, body.split4 #pane2 { border-left:0; }
+  body.single .pane:not(#pane0), body.split2 .pane:nth-child(n+3), body.split4 .pane:nth-child(n+5) { display:none; }
+  body.split4 #terms, body.split8 #terms { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-rows:repeat(2,minmax(0,1fr)); }
+  body.split8 #terms { grid-template-rows:repeat(4,minmax(0,1fr)); }
+  body.split4 .pane, body.split8 .pane { border-top:1px solid #293039; border-left:1px solid #293039; }
+  body.split4 .pane:nth-child(-n+2), body.split8 .pane:nth-child(-n+2) { border-top:0; }
+  body.split4 .pane:nth-child(2n+1), body.split8 .pane:nth-child(2n+1) { border-left:0; }
+  @media (orientation:landscape) {
+    body.split8 #terms { grid-template-columns:repeat(4,minmax(0,1fr)); grid-template-rows:repeat(2,minmax(0,1fr)); }
+    body.split8 .pane:nth-child(-n+4) { border-top:0; }
+    body.split8 .pane:nth-child(2n+1) { border-left:1px solid #293039; }
+    body.split8 .pane:nth-child(4n+1) { border-left:0; }
+  }
   button { flex:0 0 auto; min-width:32px; height:28px; padding:0 6px; border:1px solid #3a3a3a; border-radius:5px; background:#23272d; color:#eee; font:10.5px system-ui,sans-serif; white-space:nowrap; }
   button.active { background:#0e5f9d; border-color:#58a6ff; }
   #sessions button.sessionHidden { color:#7f8790; border-color:#252b32; background:#171b20; }
@@ -62,9 +69,15 @@
   .imageSection:first-child { border-top:0; padding-top:0; }
   .imageSectionTitle { font:11px system-ui,sans-serif; color:#c8d1dc; margin:0 0 6px; }
   .imageActions, .imageLegend, .imageRowActions { display:flex; gap:5px; overflow-x:auto; scrollbar-width:none; }
+  .imageActions { flex-wrap:wrap; align-items:flex-start; }
   .imageActions::-webkit-scrollbar, .imageLegend::-webkit-scrollbar, .imageRowActions::-webkit-scrollbar { display:none; }
-  .imagePullForm { flex:0 0 auto; display:flex; gap:5px; align-items:center; min-width:260px; }
-  .imagePullInput { flex:1 1 190px; min-width:150px; height:28px; box-sizing:border-box; border:1px solid #303946; background:#06080a; color:#e8edf2; padding:0 6px; font:11px ui-monospace, SFMono-Regular, Consolas, monospace; outline:0; }
+  .imagePullForm { flex:1 1 100%; min-width:260px; display:flex; flex-direction:column; gap:5px; align-items:stretch; }
+  .imagePullControls { display:flex; gap:5px; align-items:center; min-width:0; }
+  .imagePullInput { flex:1 1 190px; min-width:120px; height:28px; box-sizing:border-box; border:1px solid #303946; background:#06080a; color:#e8edf2; padding:0 6px; font:11px ui-monospace, SFMono-Regular, Consolas, monospace; outline:0; }
+  .imagePullMeta { font:10.5px system-ui,sans-serif; color:#aeb8c4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .imagePullSuggestions { display:flex; flex-direction:column; gap:2px; max-height:176px; overflow:auto; border:1px solid #26313c; background:#0a0e13; scrollbar-width:none; }
+  .imagePullSuggestions::-webkit-scrollbar { display:none; }
+  .imagePullSuggestions button { width:100%; height:26px; justify-content:flex-start; text-align:left; font-size:10.5px; font-family:ui-monospace, SFMono-Regular, Consolas, monospace; }
   .imageWidgetGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
   .imageWidget { border:1px solid #303946; background:#0d1218; padding:7px; min-width:0; }
   .imageWidgetTitle { font:10px system-ui,sans-serif; color:#9faab8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -101,6 +114,10 @@
     <div class="pane" id="pane1"><div class="paneTitle">S2 Termux 127.0.0.1:8766 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term1"></div></div>
     <div class="pane" id="pane2"><div class="paneTitle">S3 Termux 127.0.0.1:8767 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term2"></div></div>
     <div class="pane" id="pane3"><div class="paneTitle">S4 Termux 127.0.0.1:8768 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term3"></div></div>
+    <div class="pane" id="pane4"><div class="paneTitle">S5 Termux 127.0.0.1:8769 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term4"></div></div>
+    <div class="pane" id="pane5"><div class="paneTitle">S6 Termux 127.0.0.1:8770 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term5"></div></div>
+    <div class="pane" id="pane6"><div class="paneTitle">S7 Termux 127.0.0.1:8771 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term6"></div></div>
+    <div class="pane" id="pane7"><div class="paneTitle">S8 Termux 127.0.0.1:8772 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term7"></div></div>
   </div>
   <div id="skydnirEditor">
     <div class="editorTop"><div class="editorTitle">Skydnir Project</div><button id="skydnirEditorSave">Save</button><button id="skydnirEditorClose">Cancel</button></div>
@@ -376,7 +393,9 @@ class VirtualTerm {
     const naturalW = Math.max(2, Math.max(asciiW, wideW / 2, this.options.fontSize * 0.5));
     const naturalH = Math.max(4, this.options.fontSize * 1.25);
     const cols = Math.max(8, Math.floor(width / naturalW));
-    const rows = opts.preserveRows ? this.rows : Math.max(4, Math.floor(height / naturalH));
+    const fittedRows = Math.max(4, Math.floor(height / naturalH));
+    const preserveRows = !!opts.preserveRows && fittedRows < this.rows;
+    const rows = preserveRows ? this.rows : fittedRows;
     this.fitPixelW = width;
     this.fitPixelH = height;
     this.charW = width / cols;
@@ -926,9 +945,11 @@ class XtermCompat {
     }
     if (cell && cell.width > 0 && cell.height > 0) {
       const cols = Math.max(2, Math.floor(width / cell.width) - 1);
-      const rows = opts.preserveRows ? this.term.rows : Math.max(1, Math.floor(height / cell.height));
+      const fittedRows = Math.max(1, Math.floor(height / cell.height));
+      const preserveRows = !!opts.preserveRows && fittedRows < (this.term.rows || 0);
+      const rows = preserveRows ? this.term.rows : fittedRows;
       if (this.term.cols !== cols || this.term.rows !== rows) this.term.resize(cols, rows);
-      this.updateVisualViewport(opts, cell, height, wasAtBottom);
+      this.updateVisualViewport(Object.assign({}, opts, { preserveRows }), cell, height, wasAtBottom);
     } else if (!opts.preserveRows) {
       this.fitAddon.fit();
       this.clearVisualViewport();
@@ -1234,13 +1255,13 @@ function makePane(index) {
   if (term.setPersistKey) term.setPersistKey('session-' + index);
   return { term, session: index, decoder: new TextDecoder('utf-8'), overlay, handles:[handleStart, handleEnd] };
 }
-const panes = [makePane(0), makePane(1), makePane(2), makePane(3)];
+const panes = Array.from({ length:SESSION_COUNT }, (_, i) => makePane(i));
 const sessionDecoders = Array.from({ length:SESSION_COUNT }, () => new TextDecoder('utf-8'));
 const hiddenSessionBacklog = Array.from({ length:SESSION_COUNT }, () => '');
 const sessionReplayText = Array.from({ length:SESSION_COUNT }, () => '');
 const yesProceedTails = Array.from({ length:SESSION_COUNT }, () => '');
 const autoYesTimers = Array.from({ length:SESSION_COUNT }, () => null);
-const autoYesArmed = Array.from({ length:SESSION_COUNT }, () => false);
+const autoYesDueTimes = Array.from({ length:SESSION_COUNT }, () => []);
 const sessionFlashTimers = Array.from({ length:SESSION_COUNT }, () => null);
 const sessionTitles = Array.from({ length:SESSION_COUNT }, (_, i) => ({ backend:'Termux', target:TERMUX_HOST + ':' + (TERMUX_BASE_PORT + i), state:'idle' }));
 sessionTitleStatusReady = true;
@@ -1361,20 +1382,25 @@ function leastRecentlyActiveVisiblePane() {
 function focusSessionForPrompt(session) {
   if (!autoYesProceed) return;
   const s = normalizeSessionId(session);
-  if (autoYesArmed[s]) return;
-  setStatus(`S${s + 1} needs confirmation; auto enter in ${Math.round(AUTO_YES_ENTER_DELAY_MS / 1000)}s`);
-  scheduleAutoYesEnter(s);
+  enqueueAutoYesEnter(s);
 }
 function inspectYesProceedOutput(session, text) {
   if (!autoYesProceed || !text) return;
   const s = normalizeSessionId(session);
-  const scan = (yesProceedTails[s] || '') + text;
-  if (scan.includes(YES_PROCEED_TEXT)) focusSessionForPrompt(s);
+  const previous = yesProceedTails[s] || '';
+  const scan = previous + text;
+  const haystack = scan.toLowerCase();
+  const needle = YES_PROCEED_TEXT.toLowerCase();
+  let pos = 0;
+  while ((pos = haystack.indexOf(needle, pos)) >= 0) {
+    if (pos + needle.length > previous.length) focusSessionForPrompt(s);
+    pos += needle.length;
+  }
   yesProceedTails[s] = scan.slice(-Math.max(0, YES_PROCEED_TEXT.length - 1));
 }
 function clearAutoYesTimer(session) {
   const s = normalizeSessionId(session);
-  autoYesArmed[s] = false;
+  autoYesDueTimes[s] = [];
   if (autoYesTimers[s]) {
     clearTimeout(autoYesTimers[s]);
     autoYesTimers[s] = null;
@@ -1383,16 +1409,24 @@ function clearAutoYesTimer(session) {
 function clearAllAutoYesTimers() {
   for (let i=0; i<autoYesTimers.length; i++) clearAutoYesTimer(i);
 }
+function enqueueAutoYesEnter(session) {
+  const s = normalizeSessionId(session);
+  autoYesDueTimes[s].push(Date.now() + AUTO_YES_ENTER_DELAY_MS);
+  autoYesDueTimes[s].sort((a, b) => a - b);
+  setStatus(`S${s + 1} needs confirmation; auto enter in ${Math.round(AUTO_YES_ENTER_DELAY_MS / 1000)}s`);
+  scheduleAutoYesEnter(s);
+}
 function scheduleAutoYesEnter(session) {
   const s = normalizeSessionId(session);
-  if (autoYesTimers[s]) return;
-  autoYesArmed[s] = true;
+  if (autoYesTimers[s] || !autoYesDueTimes[s].length) return;
+  const delay = Math.max(0, autoYesDueTimes[s][0] - Date.now());
   autoYesTimers[s] = setTimeout(() => {
     autoYesTimers[s] = null;
-    autoYesArmed[s] = false;
-    writeSessionText(s, '\r', false);
+    autoYesDueTimes[s].shift();
+    writeSessionText(s, String.fromCharCode(13), false);
     setStatus(`S${s + 1} auto enter`);
-  }, AUTO_YES_ENTER_DELAY_MS);
+    if (autoYesProceed) scheduleAutoYesEnter(s);
+  }, delay);
 }
 function paneViewSnapshot(index) {
   const p = panes[index];
@@ -2225,6 +2259,17 @@ function openSkydnirImagesPanel(refresh=false) {
     try { Android.refreshDockerImages(); } catch (_) { renderSkydnirImagesPanel({ endpoint: dockerEndpoint(), images: [], containers: [], error: 'Android API unavailable' }); }
   } else renderSkydnirImagesPanel(currentImagesPayload);
 }
+function dockerDisplayRef(ref) {
+  return String(ref || '').trim().replace(/^docker\.io\/library\//, '').replace(/^docker\.io\//, '');
+}
+function dockerRefAliases(ref) {
+  const raw = String(ref || '').trim();
+  const display = dockerDisplayRef(raw);
+  const out = new Set([raw, display]);
+  if (display && !display.includes('/')) out.add('library/' + display);
+  if (display) { out.add('docker.io/' + display); out.add('docker.io/library/' + display); }
+  return [...out].filter(Boolean).map(v => v.toLowerCase());
+}
 function imageDisplayRef(img) { return img && (img.repoTag || img.id || 'unknown image'); }
 function imageVersionDetail(ref) {
   if (!ref) return 'latest';
@@ -2233,8 +2278,20 @@ function imageVersionDetail(ref) {
   return last.includes(':') ? last.split(':').pop() : 'latest';
 }
 function shortImageId(id) { return id ? String(id).replace(/^sha256:/, '').slice(0, 12) : ''; }
-function imageContainerRefs(ref, containers) {
-  return (containers || []).filter(c => (c.image || '') === ref || (c.image || '').includes(ref)).map(c => c.name || (c.id || '').slice(0, 12));
+function imageContainerRefs(image, containers) {
+  const ref = typeof image === 'string' ? image : imageDisplayRef(image);
+  const aliases = new Set(dockerRefAliases(ref));
+  const imageId = typeof image === 'object' && image ? String(image.id || '').replace(/^sha256:/, '').toLowerCase() : '';
+  return (containers || []).filter(c => {
+    const cImage = dockerDisplayRef(c.image || '').toLowerCase();
+    const cImageRaw = String(c.image || '').trim().toLowerCase();
+    const cImageId = String(c.imageId || '').replace(/^sha256:/, '').toLowerCase();
+    return aliases.has(cImage) || aliases.has(cImageRaw) || (imageId && cImageId && (cImageId === imageId || cImageId.startsWith(imageId) || imageId.startsWith(cImageId)));
+  }).map(c => {
+    const name = c.name || (c.id || '').slice(0, 12) || 'container';
+    const state = c.state || c.status || 'unknown';
+    return `${name} (${state})`;
+  }).filter((v, i, a) => a.indexOf(v) === i).sort();
 }
 function addImageSection(parent, title) {
   const section = document.createElement('div'); section.className = 'imageSection';
@@ -2249,18 +2306,72 @@ function imageBridgeJson(name, ...args) {
     return JSON.parse(Android[name](...args) || '{}');
   } catch (e) { return { error: e && e.message ? e.message : 'Bridge call failed' }; }
 }
+let imagePullSearchTimer = 0;
+let imagePullSearchSerial = 0;
+function imageJsonArrayBridge(name, ...args) {
+  try {
+    if (!window.Android || typeof Android[name] !== 'function') return [];
+    const parsed = JSON.parse(Android[name](...args) || '[]');
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch (_) { return []; }
+}
+function imagePullPlatform() {
+  try { return Android.imagePullPlatform ? (Android.imagePullPlatform() || 'linux/arm64') : 'linux/arm64'; } catch (_) { return 'linux/arm64'; }
+}
+function uniqueImageRefs(values) {
+  const seen = new Set();
+  return (values || []).map(v => String(v || '').trim()).filter(v => {
+    if (!v || seen.has(v.toLowerCase())) return false;
+    seen.add(v.toLowerCase()); return true;
+  }).sort((a,b) => (a.split(':')[0].localeCompare(b.split(':')[0]) || a.localeCompare(b)));
+}
+function renderPullSuggestionButtons(list, input, suggestions, query) {
+  list.textContent = '';
+  const q = String(query || '').trim().toLowerCase();
+  uniqueImageRefs(suggestions).filter(ref => !q || ref.toLowerCase().includes(q)).slice(0, 30).forEach(ref => {
+    list.appendChild(imageButton(ref, () => { input.value = ref; currentImagesPayload.pullRef = ref; renderPullSuggestionButtons(list, input, suggestions, ref); input.focus(); }));
+  });
+}
+function scheduleDockerHubSuggestions(input, list, meta, platform) {
+  clearTimeout(imagePullSearchTimer);
+  const q = input.value.trim();
+  if (q.length < 2 || q.includes('/') || q.includes(':') || q.includes('@')) {
+    meta.textContent = `Suggestions for ${platform}`;
+    return;
+  }
+  const serial = ++imagePullSearchSerial;
+  imagePullSearchTimer = setTimeout(() => {
+    meta.textContent = `Searching Docker Hub for ${q} (${platform})`;
+    const remote = imageJsonArrayBridge('fetchDockerHubImageRefs', q);
+    if (serial !== imagePullSearchSerial) return;
+    const before = currentImagesPayload.pullSuggestions || [];
+    currentImagesPayload.pullSuggestions = uniqueImageRefs(before.concat(remote));
+    meta.textContent = remote.length ? `Added ${remote.length} Docker Hub result(s) for ${q} (${platform})` : `Suggestions for ${platform}`;
+    renderPullSuggestionButtons(list, input, currentImagesPayload.pullSuggestions, q);
+  }, 450);
+}
 function renderImageActions(parent, images) {
   const actions = document.createElement('div'); actions.className = 'imageActions';
+  const platform = imagePullPlatform();
+  currentImagesPayload.pullPlatform = platform;
+  currentImagesPayload.pullSuggestions = uniqueImageRefs((currentImagesPayload.pullSuggestions || []).concat(imageJsonArrayBridge('dockerImagePullSuggestions')));
   const pullForm = document.createElement('div'); pullForm.className = 'imagePullForm';
-  const input = document.createElement('input'); input.className = 'imagePullInput'; input.value = currentImagesPayload.pullRef || 'ubuntu:24.04'; input.autocapitalize = 'none'; input.autocomplete = 'off'; input.spellcheck = false; input.placeholder = 'image:tag';
+  const controls = document.createElement('div'); controls.className = 'imagePullControls';
+  const input = document.createElement('input'); input.className = 'imagePullInput'; input.value = currentImagesPayload.pullRef || ''; input.autocapitalize = 'none'; input.autocomplete = 'off'; input.spellcheck = false; input.placeholder = 'Image reference, for example ubuntu:24.04';
   const pull = imageButton('Pull / Update Image', () => {
     const ref = input.value.trim();
     if (!ref) { input.focus(); return; }
     currentImagesPayload.pullRef = ref;
-    try { Android.pullDockerImage(skydnirMenuSession(), ref); currentImagesPayload.loading = true; currentImagesPayload.error = ''; renderSkydnirImagesPanel(currentImagesPayload); } catch (_) { setStatus('Skydnir image pull failed'); }
+    try { Android.pullDockerImageWithPlatform(skydnirMenuSession(), ref, currentImagesPayload.pullPlatform || platform); currentImagesPayload.loading = true; currentImagesPayload.error = ''; renderSkydnirImagesPanel(currentImagesPayload); } catch (_) { setStatus('Skydnir image pull failed'); }
   });
+  const meta = document.createElement('div'); meta.className = 'imagePullMeta'; meta.textContent = `Suggestions for ${platform}`;
+  const list = document.createElement('div'); list.className = 'imagePullSuggestions';
+  input.oninput = () => { currentImagesPayload.pullRef = input.value; renderPullSuggestionButtons(list, input, currentImagesPayload.pullSuggestions, input.value); scheduleDockerHubSuggestions(input, list, meta, platform); };
   input.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); pull.click(); } };
-  pullForm.appendChild(input); pullForm.appendChild(pull); actions.appendChild(pullForm);
+  controls.appendChild(input); controls.appendChild(pull);
+  pullForm.appendChild(controls); pullForm.appendChild(meta); pullForm.appendChild(list);
+  renderPullSuggestionButtons(list, input, currentImagesPayload.pullSuggestions, input.value);
+  actions.appendChild(pullForm);
   actions.appendChild(imageButton('Browse image files', () => renderImageFilesRoot(), !images.length));
   actions.appendChild(imageButton('Prune build cache', () => { try { Android.pruneDockerBuildCache(); currentImagesPayload.loading = true; renderSkydnirImagesPanel(currentImagesPayload); } catch (_) { setStatus('Skydnir prune failed'); } }));
   actions.appendChild(imageButton('Refresh', () => openSkydnirImagesPanel(true)));
@@ -2275,7 +2386,7 @@ function renderImageWidgets(parent, images, containers) {
   const imageViews = Number(storage.ImageViewBytes) || 0;
   const containerUpper = Number(storage.ContainerUpperBytes) || 0;
   const buildCache = Array.isArray(storage.BuildCache) ? storage.BuildCache : [];
-  const referenced = images.filter(i => imageContainerRefs(imageDisplayRef(i), containers).length).length;
+  const referenced = images.filter(i => imageContainerRefs(i, containers).length).length;
   const stale = images.filter(i => !i.repoTag || /^sha256:/.test(i.repoTag)).length;
   const w1 = document.createElement('div'); w1.className = 'imageWidget';
   w1.innerHTML = '<div class="imageWidgetTitle">Layer/cache health</div><div class="imageWidgetValue"></div><div class="imageWidgetDetail"></div>';
@@ -2318,7 +2429,7 @@ function renderImageReferenceTree(parent, images, containers) {
   const graph = document.createElement('div'); graph.className = 'imageGraph';
   images.slice().sort((a, b) => imageDisplayRef(a).localeCompare(imageDisplayRef(b))).forEach(img => {
     const ref = imageDisplayRef(img);
-    const refs = imageContainerRefs(ref, containers);
+    const refs = imageContainerRefs(img, containers);
     const rootfs = Number(img.rootfsEntries) >= 0 ? `rootfs entries ${img.rootfsEntries}` : 'Image rootfs';
     const layers = Number(img.layers) >= 0 ? `${img.layers} layers` : 'layers unknown';
     const uniqueSize = Number(img.uniqueSize) >= 0 ? Number(img.uniqueSize) : (Number(img.virtualSize || img.size) || 0);
@@ -2487,17 +2598,18 @@ function refreshAutoYesButton() {
 document.getElementById('autoYes').onclick = () => { autoYesProceed = !autoYesProceed; if (!autoYesProceed) clearAllAutoYesTimers(); refreshAutoYesButton(); saveLayout(); setStatus(autoYesProceed ? 'Auto Yes on' : 'Auto Yes off'); };
 function refreshSplitButton() {
   const b = document.getElementById('split');
-  b.textContent = splitCount === 4 ? 'Split 4' : splitCount === 2 ? 'Split 2' : 'Split 1';
+  b.textContent = splitCount === 8 ? 'Split 8' : splitCount === 4 ? 'Split 4' : splitCount === 2 ? 'Split 2' : 'Split 1';
   b.classList.toggle('active', splitCount > 1);
 }
 function applySplitState(countOrEnabled, persist=true) {
   rememberVisiblePaneViews();
   splitCount = countOrEnabled === true ? 2 : countOrEnabled === false ? 1 : Number(countOrEnabled) || 1;
-  if (![1, 2, 4].includes(splitCount)) splitCount = splitCount > 2 ? 4 : splitCount > 1 ? 2 : 1;
+  if (![1, 2, 4, 8].includes(splitCount)) splitCount = splitCount > 4 ? 8 : splitCount > 2 ? 4 : splitCount > 1 ? 2 : 1;
   split = splitCount > 1;
   document.body.classList.toggle('single', splitCount === 1);
   document.body.classList.toggle('split2', splitCount === 2);
   document.body.classList.toggle('split4', splitCount === 4);
+  document.body.classList.toggle('split8', splitCount === 8);
   refreshSplitButton();
   if (!isPaneVisible(activePane)) setActivePane(0);
   else { if (panes[activePane]) panes[activePane].lastActiveAt = Date.now(); panes.forEach((_, i) => document.getElementById("pane" + i).classList.toggle("active", activePane === i)); refreshSessions(); updatePaneTitles(); }
@@ -2506,7 +2618,7 @@ function applySplitState(countOrEnabled, persist=true) {
   requestAnimationFrame(() => relayout('split-frame'));
   setTimeout(() => relayout('split-settled'), RESIZE_SLOW_DELAY_MS);
 }
-function nextSplitCount() { return splitCount === 1 ? 2 : splitCount === 2 ? 4 : 1; }
+function nextSplitCount() { return splitCount === 1 ? 2 : splitCount === 2 ? 4 : splitCount === 4 ? 8 : 1; }
 document.getElementById('split').onclick = () => applySplitState(nextSplitCount(), true);
 document.getElementById('redraw').onclick = () => { try { active().term.refresh(); } catch (_) {} relayout('redraw'); };
 const skydnirEditor = document.getElementById('skydnirEditor');

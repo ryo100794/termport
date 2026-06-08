@@ -4,6 +4,9 @@ build/
 app/build/
 local.properties
 *.apk
+!artifacts/
+!artifacts/apk/
+!artifacts/apk/*.apk
 *.ap_
 *.aab
 

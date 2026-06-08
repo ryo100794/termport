@@ -29,13 +29,20 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -46,6 +53,9 @@ public class MainActivity extends Activity {
     private static final int SKYDNIR_ENGINE_SOCKET_ID = 12375;
     private static final String PREF_BATTERY_OPTIMIZATION_REQUESTED = "battery_optimization_requested";
     private static final String PREF_TERMUX_CONNECTED_MASK = "termux_connected_mask";
+    private static final int REQUEST_TERMUX_RUN_COMMAND = 7;
+    private static final int REQUEST_POST_NOTIFICATIONS = 8;
+    private static final int SKYDNIR_IMAGE_SCAN_LIMIT = 2000;
     private static final int MAX_SESSIONS = 8;
     private static final int RAW_CAPTURE_LIMIT = 512 * 1024;
     private static final String TERMUX_PACKAGE = "com.termux";
@@ -91,12 +101,15 @@ public class MainActivity extends Activity {
         });
         webView.addJavascriptInterface(new Bridge(), "Android");
         setContentView(webView);
+        requestPostNotificationsIfNeeded();
+        startSkydnirService();
         webView.loadUrl("file:///android_asset/xterm/index.html");
         webView.postDelayed(this::requestIgnoreBatteryOptimizationsIfNeeded, 1000);
     }
     @Override
     protected void onResume() {
         super.onResume();
+        startSkydnirService();
         if (webView != null) {
             webView.postDelayed(this::restoreTermuxSessions, 700);
             webView.postDelayed(this::restoreTermuxSessions, 2000);
@@ -114,6 +127,11 @@ public class MainActivity extends Activity {
         super.onDestroy();
         for (int i = 0; i < MAX_SESSIONS; i++) closeSocket(i);
         io.shutdownNow();
+    }
+    private void requestPostNotificationsIfNeeded() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") == PackageManager.PERMISSION_GRANTED) return;
+        requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQUEST_POST_NOTIFICATIONS);
     }
     private void requestIgnoreBatteryOptimizationsIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
@@ -138,7 +156,7 @@ public class MainActivity extends Activity {
     private boolean ensureRunCommandPermission() {
         if (android.os.Build.VERSION.SDK_INT >= 23
                 && checkSelfPermission(RUN_COMMAND_PERMISSION) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{RUN_COMMAND_PERMISSION}, 7);
+            requestPermissions(new String[]{RUN_COMMAND_PERMISSION}, REQUEST_TERMUX_RUN_COMMAND);
             return false;
         }
         return true;
@@ -196,7 +214,7 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == 7 && grantResults.length > 0
+        if (requestCode == REQUEST_TERMUX_RUN_COMMAND && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             int pending = pendingTermuxSession;
             pendingTermuxSession = -1;
@@ -205,7 +223,7 @@ public class MainActivity extends Activity {
                 initialSessionsStarted = false;
                 restoreTermuxSessions();
             }
-        } else if (requestCode == 7) {
+        } else if (requestCode == REQUEST_TERMUX_RUN_COMMAND) {
             pendingTermuxSession = -1;
             showSetupHelp("RUN_COMMAND permission was denied");
         }
@@ -571,6 +589,7 @@ public class MainActivity extends Activity {
                         .put("id", c.optString("Id"))
                         .put("name", containerDisplayName(c))
                         .put("image", c.optString("Image"))
+                        .put("imageId", c.optString("ImageID"))
                         .put("state", c.optString("State"))
                         .put("status", c.optString("Status")));
             } catch (JSONException ignored) {
@@ -963,10 +982,126 @@ public class MainActivity extends Activity {
         }
     }
 
-    private int dockerImageCreateStreaming(int session, String imageRef) throws Exception {
+    private String abiDefaultImagePlatform() {
+        String abi = Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "";
+        if ("arm64-v8a".equals(abi)) return "linux/arm64";
+        if ("armeabi-v7a".equals(abi) || "armeabi".equals(abi)) return "linux/arm/v7";
+        if ("x86_64".equals(abi)) return "linux/amd64";
+        if ("x86".equals(abi)) return "linux/386";
+        return "linux/arm64";
+    }
+    private String currentImagePlatform() {
+        try {
+            EngineResponse response = dockerRequest("GET", "/system/host", null, 2500);
+            if (response.status >= 200 && response.status <= 299) {
+                JSONObject runtime = new JSONObject(response.text()).optJSONObject("Runtime");
+                String platform = runtime == null ? "" : runtime.optString("Platform", "").trim();
+                if (!platform.isEmpty()) return platform;
+            }
+        } catch (Exception ignored) {
+        }
+        return abiDefaultImagePlatform();
+    }
+    private void addImageSuggestion(LinkedHashSet<String> refs, String ref) {
+        if (ref == null) return;
+        String r = ref.trim();
+        if (r.isEmpty() || r.startsWith("#")) return;
+        refs.add(r);
+    }
+    private String dockerImagePullSuggestionsJson() {
+        LinkedHashSet<String> refs = new LinkedHashSet<>();
+        addImageSuggestion(refs, "ubuntu:22.04");
+        addImageSuggestion(refs, "ubuntu:24.04");
+        addImageSuggestion(refs, "debian:bookworm");
+        addImageSuggestion(refs, "alpine:3.20");
+        addImageSuggestion(refs, "busybox:latest");
+        File[] imageDirs = skydnirImagesDir().listFiles(File::isDirectory);
+        if (imageDirs != null) {
+            for (File dir : imageDirs) {
+                String ref = readTextFile(new File(dir, "image_ref")).trim();
+                addImageSuggestion(refs, displayDockerImageRef(ref.isEmpty() ? dir.getName() : ref));
+            }
+        }
+        File project = skydnirProjectDir();
+        Pattern imageLine = Pattern.compile("^\\s*image\\s*:\\s*['" + '"' + "]?([^'" + '"' + "\\s#]+)", Pattern.CASE_INSENSITIVE);
+        Pattern fromLine = Pattern.compile("^\\s*FROM\\s+(?:--platform=\\S+\\s+)?([^@\\s]+(?:@[^\\s]+|:[^\\s]+)?)", Pattern.CASE_INSENSITIVE);
+        ArrayList<File> composeFiles = new ArrayList<>();
+        ArrayList<File> dockerfiles = new ArrayList<>();
+        collectImageRefFiles(project, composeFiles, dockerfiles, new int[1]);
+        Collections.sort(composeFiles, (a, b) -> a.getAbsolutePath().compareTo(b.getAbsolutePath()));
+        Collections.sort(dockerfiles, (a, b) -> a.getAbsolutePath().compareTo(b.getAbsolutePath()));
+        for (File file : composeFiles) scanImageRefs(file, imageLine, refs);
+        for (File file : dockerfiles) scanImageRefs(file, fromLine, refs);
+        ArrayList<String> sorted = new ArrayList<>(refs);
+        Collections.sort(sorted, (a, b) -> {
+            int c = a.split(":", 2)[0].compareToIgnoreCase(b.split(":", 2)[0]);
+            return c != 0 ? c : a.compareToIgnoreCase(b);
+        });
+        return new JSONArray(sorted).toString();
+    }
+    private void scanImageRefs(File file, Pattern pattern, LinkedHashSet<String> refs) {
+        String text = readTextFile(file);
+        if (text.isEmpty()) return;
+        String[] lines = text.split("\\r?\\n");
+        for (String line : lines) {
+            Matcher m = pattern.matcher(line);
+            if (m.find()) addImageSuggestion(refs, m.group(1));
+        }
+    }
+    private void collectImageRefFiles(File dir, ArrayList<File> composeFiles, ArrayList<File> dockerfiles, int[] visited) {
+        if (dir == null || !dir.isDirectory() || visited[0] >= SKYDNIR_IMAGE_SCAN_LIMIT) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        Arrays.sort(files, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+        for (File file : files) {
+            if (visited[0]++ >= SKYDNIR_IMAGE_SCAN_LIMIT) return;
+            if (file.isDirectory()) {
+                collectImageRefFiles(file, composeFiles, dockerfiles, visited);
+                continue;
+            }
+            String name = file.getName();
+            if ("compose.yaml".equals(name) || "compose.yml".equals(name) || "docker-compose.yaml".equals(name) || "docker-compose.yml".equals(name)) composeFiles.add(file);
+            if ("Dockerfile".equals(name)) dockerfiles.add(file);
+        }
+    }
+    private String fetchDockerHubImageRefsJson(String query) {
+        String q = query == null ? "" : query.trim();
+        if (q.length() < 2 || q.contains("/") || q.contains(":") || q.contains("@")) return "[]";
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL("https://hub.docker.com/v2/search/repositories/?query=" + encodePath(q) + "&page_size=25");
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(2500);
+            conn.setReadTimeout(3500);
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Accept", "application/json");
+            InputStream stream = conn.getResponseCode() >= 200 && conn.getResponseCode() <= 299 ? conn.getInputStream() : conn.getErrorStream();
+            if (stream == null) return "[]";
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = stream.read(buf)) >= 0) out.write(buf, 0, n);
+            JSONArray results = new JSONObject(out.toString(StandardCharsets.UTF_8.name())).optJSONArray("results");
+            JSONArray refs = new JSONArray();
+            if (results != null) {
+                for (int i = 0; i < results.length(); i++) {
+                    String ref = results.optJSONObject(i) == null ? "" : results.optJSONObject(i).optString("repo_name", "");
+                    if (!ref.trim().isEmpty()) refs.put(ref.trim());
+                }
+            }
+            return refs.toString();
+        } catch (Exception e) {
+            return "[]";
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private int dockerImageCreateStreaming(int session, String imageRef, String platform) throws Exception {
         try (LocalSocket sock = openEngineSocket(600000)) {
             OutputStream out = sock.getOutputStream();
-            String head = "POST /images/create?fromImage=" + encodePath(imageRef) + " HTTP/1.0\r\n"
+            String platformQuery = platform == null || platform.trim().isEmpty() ? "" : "&platform=" + encodePath(platform.trim());
+            String head = "POST /images/create?fromImage=" + encodePath(imageRef) + platformQuery + " HTTP/1.0\r\n"
                     + "Host: skydnir\r\n"
                     + "Connection: close\r\n"
                     + "Content-Length: 0\r\n"
@@ -1005,19 +1140,23 @@ public class MainActivity extends Activity {
         }
     }
     private void pullDockerImage(int session, String imageRef) {
+        pullDockerImage(session, imageRef, currentImagePlatform());
+    }
+    private void pullDockerImage(int session, String imageRef, String platform) {
         int s = clampSession(session);
         String ref = imageRef == null ? "" : imageRef.trim();
         if (ref.isEmpty()) return;
+        String pullPlatform = platform == null || platform.trim().isEmpty() ? currentImagePlatform() : platform.trim();
         setStatus("Skydnir: pulling image " + ref);
-        writeTerminal(s, "\r\n[TermPort] Skydnir image pull: " + ref + "\r\n");
+        writeTerminal(s, "\r\n[TermPort] Skydnir image pull: " + ref + "\r\n[TermPort] platform: " + pullPlatform + "\r\n");
         io.execute(() -> {
             try {
                 waitForSkydnirEngine(30000);
-                int status = dockerImageCreateStreaming(s, ref);
+                int status = dockerImageCreateStreaming(s, ref, pullPlatform);
                 if (status < 200 || status > 299) throw new Exception("HTTP " + status);
                 JSONArray images = listDockerImages();
                 publishDockerImagesWithOptionalRefs(images);
-                setStatus("Skydnir: pulled image " + ref);
+                setStatus("Skydnir: pulled image " + ref + " (" + pullPlatform + ")");
             } catch (Exception e) {
                 publishDockerImages(null, null, new JSONObject(), e.getMessage());
                 setStatus("Skydnir: image pull failed");
@@ -1444,17 +1583,36 @@ public class MainActivity extends Activity {
         tar.write(new byte[1024]);
         return tar.toByteArray();
     }
+    private String terminalStreamText(String text) {
+        String value = text == null ? "" : text;
+        StringBuilder out = new StringBuilder(value.length() + 16);
+        char prev = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch == '\n' && prev != '\r') out.append('\r');
+            out.append(ch);
+            prev = ch;
+        }
+        return out.toString();
+    }
     private void writeBuildStreamLine(int session, String line) {
         if (line == null) return;
         String trimmed = line.trim();
         if (trimmed.isEmpty()) return;
         String text = null;
+        boolean rawStream = false;
         try {
             JSONObject obj = new JSONObject(trimmed);
-            if (obj.has("stream")) text = obj.optString("stream", "");
+            if (obj.has("stream")) {
+                text = obj.optString("stream", "");
+                rawStream = true;
+            }
             else if (obj.has("status")) {
                 String id = obj.optString("id", "");
-                text = (id == null || id.isEmpty()) ? obj.optString("status", "") : id + ": " + obj.optString("status", "");
+                String progress = obj.optString("progress", "");
+                String status = obj.optString("status", "");
+                text = (id == null || id.isEmpty()) ? status : id + ": " + status;
+                if (progress != null && !progress.isEmpty()) text += " " + progress;
             }
             else if (obj.has("error")) text = "ERROR: " + obj.optString("error", "");
             else if (obj.has("errorDetail")) {
@@ -1464,7 +1622,13 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {
             text = trimmed;
         }
-        text = skydnirUserText(text == null ? "" : text).replace("\r", "\n");
+        text = skydnirUserText(text == null ? "" : text);
+        if (text.isEmpty()) return;
+        if (rawStream) {
+            writeTerminal(session, terminalStreamText(text));
+            return;
+        }
+        text = text.replace("\r", "\n");
         if (text.trim().isEmpty()) return;
         writeTerminal(session, text.replace("\n", "\r\n"));
         if (!text.endsWith("\n")) writeTerminal(session, "\r\n");
@@ -1534,6 +1698,40 @@ public class MainActivity extends Activity {
         }
         return null;
     }
+    private String skydnirContainerFailureDetail(JSONObject container) {
+        if (container == null) return "container state is unavailable";
+        String state = container.optString("State", "unknown");
+        String status = container.optString("Status", "");
+        String id = container.optString("Id", "");
+        StringBuilder detail = new StringBuilder("container ").append(state);
+        if (!status.isEmpty()) detail.append(" (").append(status).append(")");
+        if (!id.isEmpty()) {
+            try {
+                EngineResponse logs = dockerRequest("GET", "/containers/" + encodePath(id) + "/logs?stdout=1&stderr=1&tail=20", null, 3000);
+                String text = skydnirUserText(logs.text()).trim();
+                if (!text.isEmpty()) detail.append(": ").append(text.replace('\r', '\n').replaceAll("\n+", " | "));
+            } catch (Exception ignored) {}
+        }
+        return detail.toString();
+    }
+    private void verifySkydnirProjectContainerRunning(String id) throws Exception {
+        long deadline = System.currentTimeMillis() + 2500L;
+        JSONObject last = null;
+        while (System.currentTimeMillis() < deadline) {
+            try { last = findSkydnirProjectContainer(); } catch (Exception ignored) {}
+            if (last != null) {
+                String state = last.optString("State", "");
+                if ("running".equalsIgnoreCase(state)) return;
+                if ("exited".equalsIgnoreCase(state) || "dead".equalsIgnoreCase(state)) {
+                    throw new Exception(skydnirContainerFailureDetail(last));
+                }
+            }
+            try { Thread.sleep(250L); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); break; }
+        }
+        last = findSkydnirProjectContainer();
+        if (last != null && "running".equalsIgnoreCase(last.optString("State", ""))) return;
+        throw new Exception(skydnirContainerFailureDetail(last));
+    }
     private void deleteSkydnirProjectImage() {
         try { dockerRequest("DELETE", "/images/termport-local:latest?force=1", null, 8000); } catch (Exception ignored) {}
     }
@@ -1548,8 +1746,7 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             try {
                 waitForSkydnirEngine(30000);
-                writeTerminal(s, "[TermPort] Skydnir build: removing previous container/image/layers...\r\n");
-                deleteSkydnirProjectContainer();
+                writeTerminal(s, "[TermPort] Skydnir build: removing previous image/layers...\r\n");
                 deleteSkydnirProjectImage();
                 pruneSkydnirBuildState();
                 byte[] tar = buildSkydnirContextTar();
@@ -1609,11 +1806,13 @@ public class MainActivity extends Activity {
                     if (!"running".equalsIgnoreCase(state)) {
                         EngineResponse start = dockerRequest("POST", "/containers/" + encodePath(id) + "/start", null, 20000);
                         if (start.status < 200 || start.status > 299) throw new Exception(start.text());
+                        verifySkydnirProjectContainerRunning(id);
                     }
                 } else {
                     id = createSkydnirProjectContainer();
                     EngineResponse start = dockerRequest("POST", "/containers/" + encodePath(id) + "/start", null, 20000);
                     if (start.status < 200 || start.status > 299) throw new Exception(start.text());
+                    verifySkydnirProjectContainerRunning(id);
                 }
                 setStatus("Skydnir: container running");
                 writeTerminal(s, "[TermPort] Skydnir container ready: " + id.substring(0, Math.min(12, id.length())) + "\r\n");
@@ -1677,6 +1876,22 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void pullDockerImage(int session, String imageRef) {
             MainActivity.this.pullDockerImage(session, imageRef);
+        }
+        @JavascriptInterface
+        public void pullDockerImageWithPlatform(int session, String imageRef, String platform) {
+            MainActivity.this.pullDockerImage(session, imageRef, platform);
+        }
+        @JavascriptInterface
+        public String imagePullPlatform() {
+            return MainActivity.this.currentImagePlatform();
+        }
+        @JavascriptInterface
+        public String dockerImagePullSuggestions() {
+            return MainActivity.this.dockerImagePullSuggestionsJson();
+        }
+        @JavascriptInterface
+        public String fetchDockerHubImageRefs(String query) {
+            return MainActivity.this.fetchDockerHubImageRefsJson(query);
         }
         @JavascriptInterface
         public void cleanDockerImage(String imageRef) {

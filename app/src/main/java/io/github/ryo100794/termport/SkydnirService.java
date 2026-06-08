@@ -76,21 +76,25 @@ public class SkydnirService extends Service {
 
     private void startEngineThread() {
         engineThread = new Thread(() -> {
-            try {
-                File runtime = SkydnirRuntime.prepare(getApplicationContext());
-                File home = SkydnirRuntime.homeDir(getApplicationContext());
-                File sock = SkydnirRuntime.socketFile(getApplicationContext());
-                if (sock.exists()) sock.delete();
-                if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
-                Python.getInstance().getModule("skydnir_bridge").callAttr(
-                        "run_engine",
-                        sock.getAbsolutePath(),
-                        home.getAbsolutePath(),
-                        runtime.getAbsolutePath());
-            } catch (Throwable t) {
-                Log.e(TAG, "Skydnir engine crashed", t);
-            } finally {
-                if (!userStopped) stopSelf();
+            while (!userStopped) {
+                try {
+                    File runtime = SkydnirRuntime.prepare(getApplicationContext());
+                    File home = SkydnirRuntime.homeDir(getApplicationContext());
+                    File sock = SkydnirRuntime.socketFile(getApplicationContext());
+                    if (sock.exists()) sock.delete();
+                    if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
+                    Python.getInstance().getModule("skydnir_bridge").callAttr(
+                            "run_engine",
+                            sock.getAbsolutePath(),
+                            home.getAbsolutePath(),
+                            runtime.getAbsolutePath());
+                } catch (Throwable t) {
+                    Log.e(TAG, "Skydnir engine crashed", t);
+                }
+                if (!userStopped) {
+                    try { Thread.sleep(2000L); }
+                    catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+                }
             }
         }, "termport-skydnir");
         engineThread.start();
@@ -100,8 +104,11 @@ public class SkydnirService extends Service {
         try {
             PowerManager power = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (power == null) return;
-            if (wakeLock == null) wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, getPackageName() + ":skydnir");
-            if (!wakeLock.isHeld()) wakeLock.acquire(30000L);
+            if (wakeLock == null) {
+                wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, getPackageName() + ":skydnir");
+                wakeLock.setReferenceCounted(false);
+            }
+            if (!wakeLock.isHeld()) wakeLock.acquire();
         } catch (Exception e) {
             Log.w(TAG, "wake lock failed", e);
         }
