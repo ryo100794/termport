@@ -74,6 +74,7 @@ public class MainActivity extends Activity {
     private final int[] connectGenerations = new int[MAX_SESSIONS];
     private final int[] rows = filledInts(MAX_SESSIONS, 32);
     private final int[] cols = filledInts(MAX_SESSIONS, 100);
+    private final long[] skydnirNotConnectedNotices = new long[MAX_SESSIONS];
     private static String[] filledStrings(int count, String value) {
         String[] out = new String[count];
         Arrays.fill(out, value);
@@ -403,7 +404,6 @@ public class MainActivity extends Activity {
         engineSockets[s] = null;
         socketOuts[s] = null;
         dockerExecIds[s] = null;
-        dockerContainerIds[s] = null;
     }
     private void closeSocketIfCurrent(int session, Closeable owner) {
         int s = clampSession(session);
@@ -423,7 +423,7 @@ public class MainActivity extends Activity {
     }
     private String statusPrefix(int session) {
         int s = clampSession(session);
-        return "docker".equals(backends[s]) ? "Skydnir " + (s + 1) : "Session " + (s + 1);
+        return ("docker".equals(backends[s]) || "skydnir".equals(backends[s])) ? "Skydnir " + (s + 1) : "Session " + (s + 1);
     }
     private String encodePath(String value) throws Exception {
         return URLEncoder.encode(value, "UTF-8").replace("+", "%20");
@@ -897,7 +897,7 @@ public class MainActivity extends Activity {
             try {
                 EngineResponse ping = dockerRequest("GET", "/_ping", null, 1500);
                 if (ping.status < 200 || ping.status > 299) throw new Exception("/_ping HTTP " + ping.status);
-                EngineResponse list = dockerRequest("GET", "/images/json", null, 8000);
+                EngineResponse list = dockerRequest("GET", "/images/json", null, 30000);
                 if (list.status < 200 || list.status > 299) {
                     String detail = list.text();
                     throw new Exception(detail.isEmpty() ? "/images/json HTTP " + list.status : detail);
@@ -905,7 +905,7 @@ public class MainActivity extends Activity {
                 return new JSONArray(list.text());
             } catch (Exception e) {
                 last = e;
-                if (attempt < 2) Thread.sleep(250L * (attempt + 1));
+                if (attempt < 2) Thread.sleep(750L * (attempt + 1));
             }
         }
         throw last == null ? new Exception("/images/json unavailable") : last;
@@ -1219,7 +1219,7 @@ public class MainActivity extends Activity {
         connectGenerations[s]++;
         closeSocket(s);
         rememberTermuxConnected(s, false);
-        backends[s] = "docker";
+        backends[s] = "skydnir";
         dockerExecIds[s] = null;
         dockerContainerIds[s] = cid;
         setStatus("Skydnir " + (s + 1) + ": connecting " + dockerEndpoint());
@@ -1227,14 +1227,18 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             try {
                 String execId = createDockerExec(cid);
-                dockerExecIds[s] = execId;
                 LocalSocket sock = startDockerExecStream(execId);
+                dockerExecIds[s] = execId;
+                dockerContainerIds[s] = cid;
                 engineSockets[s] = sock;
                 socketOuts[s] = sock.getOutputStream();
+                backends[s] = "docker";
                 sendDockerResizeControl(s, rows[s], cols[s]);
                 setStatus("Skydnir " + (s + 1) + ": connected");
                 readLoop(s, sock, sock.getInputStream());
             } catch (Exception e) {
+                backends[s] = "skydnir";
+                dockerExecIds[s] = null;
                 setStatus("Skydnir " + (s + 1) + ": unavailable");
                 writeTerminal(s, "[TermPort] Skydnir exec failed: " + e.getMessage() + "\r\n");
             }
@@ -1251,7 +1255,7 @@ public class MainActivity extends Activity {
         connectGenerations[s]++;
         closeSocket(s);
         rememberTermuxConnected(s, false);
-        backends[s] = "docker";
+        backends[s] = "skydnir";
         dockerExecIds[s] = null;
         dockerContainerIds[s] = null;
         setStatus("Skydnir " + (s + 1) + ": connecting " + dockerEndpoint());
@@ -1276,8 +1280,11 @@ public class MainActivity extends Activity {
                     }
                 }
                 if (container == null) {
+                    backends[s] = "skydnir";
+                    dockerExecIds[s] = null;
+                    dockerContainerIds[s] = null;
                     setStatus("Skydnir " + (s + 1) + ": no running containers");
-                    writeTerminal(s, "[TermPort] Skydnir Engine is reachable, but no running containers are available. Open Skydnir list to see stopped containers.\r\n");
+                    writeTerminal(s, "[TermPort] Skydnir Engine is reachable, but no running containers are available. Press sh -it to start the TermPort project container, or Up to start it explicitly.\r\n");
                     return;
                 }
                 String containerId = container.getString("Id");
@@ -1285,15 +1292,18 @@ public class MainActivity extends Activity {
                 String name = names != null && names.length() > 0 ? names.optString(0, "").replaceFirst("^/", "") : "";
                 if (name.isEmpty()) name = containerId.length() > 12 ? containerId.substring(0, 12) : containerId;
                 String execId = createDockerExec(containerId);
+                LocalSocket sock = startDockerExecStream(execId);
                 dockerExecIds[s] = execId;
                 dockerContainerIds[s] = containerId;
-                LocalSocket sock = startDockerExecStream(execId);
                 engineSockets[s] = sock;
                 socketOuts[s] = sock.getOutputStream();
+                backends[s] = "docker";
                 setStatus("Skydnir " + (s + 1) + ": connected " + name);
                 writeTerminal(s, "[TermPort] Connected to Skydnir container " + name + "\r\n");
                 readLoop(s, sock, sock.getInputStream());
             } catch (Exception e) {
+                backends[s] = "skydnir";
+                dockerExecIds[s] = null;
                 setStatus("Skydnir " + (s + 1) + ": unavailable");
                 writeTerminal(s, "[TermPort] Skydnir Engine unavailable: " + e.getMessage() + "\r\n");
             }
@@ -1355,8 +1365,20 @@ public class MainActivity extends Activity {
                     out.write(data);
                     out.flush();
                 } else {
-                    writeTerminal(s, "not connected\r\n");
-                    if ("docker".equals(backends[s])) reconnectDockerSession(s); else connectSession(s);
+                    if ("docker".equals(backends[s])) {
+                        writeTerminal(s, "not connected\r\n");
+                        reconnectDockerSession(s);
+                    } else if ("skydnir".equals(backends[s])) {
+                        long now = System.currentTimeMillis();
+                        if (now - skydnirNotConnectedNotices[s] > 2000) {
+                            skydnirNotConnectedNotices[s] = now;
+                            writeTerminal(s, "[TermPort] Skydnir shell is not connected. Press sh -it to start/connect the project container.\r\n");
+                        }
+                        setStatus("Skydnir " + (s + 1) + ": not connected");
+                    } else {
+                        writeTerminal(s, "not connected\r\n");
+                        connectSession(s);
+                    }
                 }
             } catch (Exception e) {
                 setStatus(statusPrefix(s) + ": disconnected");

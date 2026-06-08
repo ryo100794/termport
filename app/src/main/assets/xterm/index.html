@@ -2249,14 +2249,18 @@ function requestDockerContainers() {
 }
 function requestDockerImages() { openSkydnirImagesPanel(true); }
 window.setDockerContainers = payload => { renderDockerBar(payload || {}); setDockerBarOpen(true, 'containers'); };
-window.setDockerImages = payload => { renderSkydnirImagesPanel(payload || {}); };
+window.setDockerImages = payload => { receiveSkydnirImagesPayload(payload || {}); };
 const skydnirImagesPanel = document.getElementById('skydnirImagesPanel');
 const skydnirImagesBody = document.getElementById('skydnirImagesBody');
 let currentImagesPayload = { endpoint: dockerEndpoint(), images: [], containers: [], loading: false };
 function closeSkydnirImagesPanel() {
   skydnirImagesPanel.classList.remove('open');
+  clearTimeout(imagePullSearchTimer);
+  imagePullSearchTimer = 0;
+  imagePullSearchSerial++;
   refocusActiveSoon();
 }
+function isSkydnirImagesPanelOpen() { return skydnirImagesPanel.classList.contains('open'); }
 function openSkydnirImagesPanel(refresh=false) {
   setDockerBarOpen(false);
   closeSkydnirEditor();
@@ -2264,7 +2268,7 @@ function openSkydnirImagesPanel(refresh=false) {
   if (refresh || !currentImagesPayload.images) {
     currentImagesPayload = Object.assign({}, currentImagesPayload, { endpoint: dockerEndpoint(), loading: true, error: '' });
     renderSkydnirImagesPanel(currentImagesPayload);
-    try { Android.refreshDockerImages(); } catch (_) { renderSkydnirImagesPanel({ endpoint: dockerEndpoint(), images: [], containers: [], error: 'Android API unavailable' }); }
+    try { Android.refreshDockerImages(); } catch (_) { receiveSkydnirImagesPayload({ endpoint: dockerEndpoint(), images: [], containers: [], error: 'Android API unavailable' }); }
   } else renderSkydnirImagesPanel(currentImagesPayload);
 }
 function dockerDisplayRef(ref) {
@@ -2461,7 +2465,6 @@ function renderSkydnirImagesPanel(payload={}) {
     payload = Object.assign({}, payload, { images: currentImagesPayload.images, containers: currentImagesPayload.containers || [], storage: currentImagesPayload.storage || {} });
   }
   currentImagesPayload = Object.assign({ endpoint: dockerEndpoint(), images: [], containers: [], loading: false }, payload);
-  skydnirImagesPanel.classList.add('open');
   skydnirImagesBody.textContent = '';
   const images = Array.isArray(currentImagesPayload.images) ? currentImagesPayload.images : [];
   const containers = Array.isArray(currentImagesPayload.containers) ? currentImagesPayload.containers : [];
@@ -2476,6 +2479,14 @@ function renderSkydnirImagesPanel(payload={}) {
   if (!images.length && !currentImagesPayload.loading && !currentImagesPayload.error) addImageMessage(skydnirImagesBody, 'No pulled images yet.');
   const refs = addImageSection(skydnirImagesBody, 'Image references');
   renderImageReferenceTree(refs, images, containers);
+}
+function receiveSkydnirImagesPayload(payload={}) {
+  payload = payload || {};
+  if (payload.error && (!Array.isArray(payload.images) || !payload.images.length) && Array.isArray(currentImagesPayload.images) && currentImagesPayload.images.length) {
+    payload = Object.assign({}, payload, { images: currentImagesPayload.images, containers: currentImagesPayload.containers || [], storage: currentImagesPayload.storage || {} });
+  }
+  currentImagesPayload = Object.assign({ endpoint: dockerEndpoint(), images: [], containers: [], loading: false }, payload);
+  if (isSkydnirImagesPanelOpen()) renderSkydnirImagesPanel(currentImagesPayload);
 }
 function renderImageFilesToolbar(parent, title, actions=[]) {
   const top = addImageSection(parent, title);
