@@ -1773,7 +1773,8 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             try {
                 waitForSkydnirEngine(30000);
-                writeTerminal(s, "[TermPort] Skydnir build: removing previous image/layers...\r\n");
+                writeTerminal(s, "[TermPort] Skydnir build: removing previous container/image/layers...\r\n");
+                deleteSkydnirProjectContainer();
                 deleteSkydnirProjectImage();
                 pruneSkydnirBuildState();
                 byte[] tar = buildSkydnirContextTar();
