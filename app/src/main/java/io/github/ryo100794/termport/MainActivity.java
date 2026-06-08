@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_TERMUX_RUN_COMMAND = 7;
     private static final int REQUEST_POST_NOTIFICATIONS = 8;
     private static final int SKYDNIR_IMAGE_SCAN_LIMIT = 2000;
-    private static final int MAX_SESSIONS = 8;
+    private static final int MAX_SESSIONS = 16;
     private static final int RAW_CAPTURE_LIMIT = 512 * 1024;
     private static final String TERMUX_PACKAGE = "com.termux";
     private static final String RUN_COMMAND_PERMISSION = "com.termux.permission.RUN_COMMAND";
@@ -68,12 +68,22 @@ public class MainActivity extends Activity {
     private final Socket[] sockets = new Socket[MAX_SESSIONS];
     private final LocalSocket[] engineSockets = new LocalSocket[MAX_SESSIONS];
     private final OutputStream[] socketOuts = new OutputStream[MAX_SESSIONS];
-    private final String[] backends = new String[]{"termux", "termux", "termux", "termux", "termux", "termux", "termux", "termux"};
+    private final String[] backends = filledStrings(MAX_SESSIONS, "termux");
     private final String[] dockerExecIds = new String[MAX_SESSIONS];
     private final String[] dockerContainerIds = new String[MAX_SESSIONS];
     private final int[] connectGenerations = new int[MAX_SESSIONS];
-    private final int[] rows = new int[]{32, 32, 32, 32, 32, 32, 32, 32};
-    private final int[] cols = new int[]{100, 100, 100, 100, 100, 100, 100, 100};
+    private final int[] rows = filledInts(MAX_SESSIONS, 32);
+    private final int[] cols = filledInts(MAX_SESSIONS, 100);
+    private static String[] filledStrings(int count, String value) {
+        String[] out = new String[count];
+        Arrays.fill(out, value);
+        return out;
+    }
+    private static int[] filledInts(int count, int value) {
+        int[] out = new int[count];
+        Arrays.fill(out, value);
+        return out;
+    }
     private WebView webView;
     private String bridgeAssetBase64;
     private final boolean[] termuxSingleBridgeStarted = new boolean[MAX_SESSIONS];

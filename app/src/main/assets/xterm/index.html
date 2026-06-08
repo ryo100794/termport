@@ -30,7 +30,7 @@
   .selectionRect { position:absolute; background:rgba(47,126,219,.55); mix-blend-mode:screen; }
   .selectionHandle { display:none; position:absolute; width:24px; height:24px; border-radius:50%; background:#ffffff; border:2px solid #0b5cad; box-shadow:0 1px 5px rgba(0,0,0,.55); z-index:6; pointer-events:auto; touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; transform:translate(-50%, -50%); }
   .selectionHandle.visible { display:block; }
-  body.single .pane:not(#pane0), body.split2 .pane:nth-child(n+3), body.split4 .pane:nth-child(n+5) { display:none; }
+  body.single .pane:not(#pane0), body.split2 .pane:nth-child(n+3), body.split4 .pane:nth-child(n+5), body.split8 .pane:nth-child(n+9) { display:none; }
   body.split4 #terms, body.split8 #terms { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-rows:repeat(2,minmax(0,1fr)); }
   body.split8 #terms { grid-template-rows:repeat(4,minmax(0,1fr)); }
   body.split4 .pane, body.split8 .pane { border-top:1px solid #293039; border-left:1px solid #293039; }
@@ -118,6 +118,14 @@
     <div class="pane" id="pane5"><div class="paneTitle">S6 Termux 127.0.0.1:8770 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term5"></div></div>
     <div class="pane" id="pane6"><div class="paneTitle">S7 Termux 127.0.0.1:8771 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term6"></div></div>
     <div class="pane" id="pane7"><div class="paneTitle">S8 Termux 127.0.0.1:8772 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term7"></div></div>
+    <div class="pane" id="pane8"><div class="paneTitle">S9 Termux 127.0.0.1:8773 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term8"></div></div>
+    <div class="pane" id="pane9"><div class="paneTitle">S10 Termux 127.0.0.1:8774 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term9"></div></div>
+    <div class="pane" id="pane10"><div class="paneTitle">S11 Termux 127.0.0.1:8775 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term10"></div></div>
+    <div class="pane" id="pane11"><div class="paneTitle">S12 Termux 127.0.0.1:8776 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term11"></div></div>
+    <div class="pane" id="pane12"><div class="paneTitle">S13 Termux 127.0.0.1:8777 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term12"></div></div>
+    <div class="pane" id="pane13"><div class="paneTitle">S14 Termux 127.0.0.1:8778 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term13"></div></div>
+    <div class="pane" id="pane14"><div class="paneTitle">S15 Termux 127.0.0.1:8779 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term14"></div></div>
+    <div class="pane" id="pane15"><div class="paneTitle">S16 Termux 127.0.0.1:8780 - idle</div><div class="paneActions"><button class="skydnirRun">Up</button><button class="skydnirConnect">sh -it</button><button class="skydnirEdit">Files</button><button class="skydnirBuild">Build</button><button class="skydnirList">Ps</button><button class="skydnirImages">Images</button></div><div class="term" id="term15"></div></div>
   </div>
   <div id="skydnirEditor">
     <div class="editorTop"><div class="editorTitle">Skydnir Project</div><button id="skydnirEditorSave">Save</button><button id="skydnirEditorClose">Cancel</button></div>
@@ -160,7 +168,7 @@ const POINTER_MOVE_CANCEL_PX = 14;
 const SWIPE_SESSION_THRESHOLD_PX = 72;
 const XTERM_SCROLLBACK = 20000;
 const XTERM_TRANSCRIPT_LIMIT = 1024 * 1024;
-const SESSION_COUNT = 8;
+const SESSION_COUNT = 16;
 const HIDDEN_SESSION_BACKLOG_LIMIT = 1024 * 1024;
 const TERMUX_HOST = '127.0.0.1';
 const TERMUX_BASE_PORT = 8765;
