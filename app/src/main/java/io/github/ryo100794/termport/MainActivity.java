@@ -983,12 +983,7 @@ public class MainActivity extends Activity {
     }
 
     private String abiDefaultImagePlatform() {
-        String abi = Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "";
-        if ("arm64-v8a".equals(abi)) return "linux/arm64";
-        if ("armeabi-v7a".equals(abi) || "armeabi".equals(abi)) return "linux/arm/v7";
-        if ("x86_64".equals(abi)) return "linux/amd64";
-        if ("x86".equals(abi)) return "linux/386";
-        return "linux/arm64";
+        return SkydnirRuntime.imagePlatform();
     }
     private String currentImagePlatform() {
         try {

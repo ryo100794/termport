@@ -93,7 +93,7 @@ def _start_connect_proxy():
     return server.server_address[1]
 
 
-def run_engine(sock_path, home, runtime_dir):
+def run_engine(sock_path, home, runtime_dir, platform=None):
     os.environ["SKYDNIR_HOME"] = home
     os.environ["PDOCKER_HOME"] = home
     tmp_dir = os.path.join(runtime_dir, "tmp")
@@ -111,6 +111,8 @@ def run_engine(sock_path, home, runtime_dir):
     os.environ.setdefault("PDOCKER_USE_COW_BIND", "1")
     os.environ.setdefault("PDOCKER_SUPPRESS_DEPRECATION_WARNING", "1")
     os.environ.setdefault("SKYDNIR_DAEMON_NAME", "skydnird")
+    if platform:
+        os.environ["PDOCKER_PLATFORM"] = platform
 
     direct_executor = os.path.join(runtime_dir, "docker-bin", "skydnir-direct")
     if os.path.exists(direct_executor):

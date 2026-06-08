@@ -87,7 +87,8 @@ public class SkydnirService extends Service {
                             "run_engine",
                             sock.getAbsolutePath(),
                             home.getAbsolutePath(),
-                            runtime.getAbsolutePath());
+                            runtime.getAbsolutePath(),
+                            SkydnirRuntime.imagePlatform());
                 } catch (Throwable t) {
                     Log.e(TAG, "Skydnir engine crashed", t);
                 }

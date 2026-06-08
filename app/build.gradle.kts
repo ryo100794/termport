@@ -43,26 +43,40 @@ val verifySkydnirNativeFresh by tasks.registering {
 
     doLast {
         val sourceRoot = project.file("src/main/skydnir-native")
-        val jni = project.file("src/main/jniLibs/arm64-v8a")
+        val androidNativeAbis = listOf("arm64-v8a", "armeabi-v7a")
         val gpuAbi = sourceRoot.resolve("cpp/skydnir_gpu_abi.h")
         val gpuContainerAbi = sourceRoot.resolve("gpu/skydnir_gpu_abi.h")
 
-        requireFresh(jni.resolve("libskydnirdirect.so"), sourceRoot.resolve("cpp/skydnir_direct_exec.c"))
-        requireFresh(jni.resolve("libskydnirgpuexecutor.so"), sourceRoot.resolve("cpp/skydnir_gpu_executor.c"), sourceRoot.resolve("cpp/skydnir_q4k_safe_spv.inc"), gpuAbi)
-        requireFresh(jni.resolve("libskydnirmediaexecutor.so"), sourceRoot.resolve("cpp/skydnir_media_executor.c"))
-        requireFresh(jni.resolve("libcow.so"), sourceRoot.resolve("overlay/skydnir_cow.c"))
-        requireFresh(jni.resolve("libskydnirgpushim.so"), sourceRoot.resolve("gpu/skydnir_gpu_shim.c"), gpuContainerAbi)
-        requireFresh(jni.resolve("libskydnirvulkanicd.so"), sourceRoot.resolve("gpu/skydnir_vulkan_icd.c"), gpuContainerAbi)
-        requireFresh(jni.resolve("libskydniropenclicd.so"), sourceRoot.resolve("gpu/skydnir_opencl_icd.c"), gpuContainerAbi)
+        androidNativeAbis.forEach { abi ->
+            val jni = project.file("src/main/jniLibs/$abi")
+            val directSource = if (abi == "armeabi-v7a") {
+                sourceRoot.resolve("cpp/skydnir_direct_unsupported.c")
+            } else {
+                sourceRoot.resolve("cpp/skydnir_direct_exec.c")
+            }
+            requireFresh(jni.resolve("libskydnirdirect.so"), directSource)
+            requireFresh(jni.resolve("libskydnirgpuexecutor.so"), sourceRoot.resolve("cpp/skydnir_gpu_executor.c"), sourceRoot.resolve("cpp/skydnir_q4k_safe_spv.inc"), gpuAbi)
+            requireFresh(jni.resolve("libskydnirmediaexecutor.so"), sourceRoot.resolve("cpp/skydnir_media_executor.c"))
+            requireFresh(jni.resolve("libcow.so"), sourceRoot.resolve("overlay/skydnir_cow.c"))
+            requireFresh(jni.resolve("libskydnirgpushim.so"), sourceRoot.resolve("gpu/skydnir_gpu_shim.c"), gpuContainerAbi)
+            requireFresh(jni.resolve("libskydnirvulkanicd.so"), sourceRoot.resolve("gpu/skydnir_vulkan_icd.c"), gpuContainerAbi)
+            requireFresh(jni.resolve("libskydniropenclicd.so"), sourceRoot.resolve("gpu/skydnir_opencl_icd.c"), gpuContainerAbi)
+        }
         val fdroidNoCrane = (System.getenv("SKYDNIR_FDROID_NO_CRANE") ?: "0") != "0"
+        val arm64Jni = project.file("src/main/jniLibs/arm64-v8a")
+        val arm32Jni = project.file("src/main/jniLibs/armeabi-v7a")
         if (fdroidNoCrane) {
-            if (jni.resolve("libcrane.so").exists()) {
+            if (arm64Jni.resolve("libcrane.so").exists()) {
                 throw GradleException("F-Droid mode must not package prebuilt crane payload")
             }
         } else {
-            requireFresh(jni.resolve("libcrane.so"), sourceRoot.resolve("crane"))
+            requireFresh(arm64Jni.resolve("libcrane.so"), sourceRoot.resolve("crane"))
         }
-        requireFresh(jni.resolve("libpdocker-ld-linux-aarch64.so"), jni.resolve("libpdocker-ld-linux-aarch64.so"))
+        if (arm32Jni.resolve("libcrane.so").exists()) {
+            throw GradleException("armeabi-v7a must not package the arm64-only crane payload")
+        }
+        requireFresh(arm64Jni.resolve("libpdocker-ld-linux-aarch64.so"), arm64Jni.resolve("libpdocker-ld-linux-aarch64.so"))
+        requireFresh(arm32Jni.resolve("libskydnir-ld-linux-armhf.so"), arm32Jni.resolve("libskydnir-ld-linux-armhf.so"))
         requireSameBytes(project.file("src/main/assets/skydnir/skydnird"), project.file("src/main/skydnir-daemon/skydnird"))
     }
 }
@@ -78,7 +92,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         ndk {
-            abiFilters += listOf("arm64-v8a")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 

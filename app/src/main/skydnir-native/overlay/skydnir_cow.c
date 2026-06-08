@@ -38,24 +38,24 @@
 
 static int   (*real_open)   (const char *, int, ...);
 static int   (*real_openat) (int, const char *, int, ...);
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
 static int   (*real_open64) (const char *, int, ...);
 static int   (*real_openat64)(int, const char *, int, ...);
 #endif
 static int   (*real_creat)  (const char *, mode_t);
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
 static int   (*real_creat64)(const char *, mode_t);
 #endif
 static int   (*real_truncate)(const char *, off_t);
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
 static int   (*real_truncate64)(const char *, off_t);
 #endif
 static int   (*real_ftruncate)(int, off_t);
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
 static int   (*real_ftruncate64)(int, off_t);
 #endif
 static FILE *(*real_fopen)  (const char *, const char *);
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
 static FILE *(*real_fopen64)(const char *, const char *);
 #endif
 static FILE *(*real_freopen)(const char *, const char *, FILE *);
@@ -220,24 +220,24 @@ __attribute__((constructor))
 static void libcow_init(void) {
     real_open      = dlsym(RTLD_NEXT, "open");
     real_openat    = dlsym(RTLD_NEXT, "openat");
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
     real_open64    = dlsym(RTLD_NEXT, "open64");
     real_openat64  = dlsym(RTLD_NEXT, "openat64");
 #endif
     real_creat     = dlsym(RTLD_NEXT, "creat");
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
     real_creat64   = dlsym(RTLD_NEXT, "creat64");
 #endif
     real_truncate  = dlsym(RTLD_NEXT, "truncate");
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
     real_truncate64= dlsym(RTLD_NEXT, "truncate64");
 #endif
     real_ftruncate = dlsym(RTLD_NEXT, "ftruncate");
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
     real_ftruncate64= dlsym(RTLD_NEXT, "ftruncate64");
 #endif
     real_fopen     = dlsym(RTLD_NEXT, "fopen");
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
     real_fopen64   = dlsym(RTLD_NEXT, "fopen64");
 #endif
     real_freopen   = dlsym(RTLD_NEXT, "freopen");
@@ -471,7 +471,7 @@ int open(const char *path, int flags, ...) {
     return fd;
 }
 
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
 int open64(const char *path, int flags, ...) {
     mode_t mode = 0;
     if (flags & (O_CREAT | O_TMPFILE)) {
@@ -510,7 +510,7 @@ int openat(int dirfd, const char *path, int flags, ...) {
     return fd;
 }
 
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
 int openat64(int dirfd, const char *path, int flags, ...) {
     mode_t mode = 0;
     if (flags & (O_CREAT | O_TMPFILE)) {
@@ -546,7 +546,7 @@ int creat(const char *path, mode_t mode) {
     return fd;
 }
 
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
 int creat64(const char *path, mode_t mode) {
     if (break_hardlink_copy(path, 0) < 0) return -1;
     int fd = real_creat64 ? real_creat64(path, mode) : real_creat(path, mode);
@@ -560,7 +560,7 @@ int truncate(const char *path, off_t length) {
     return real_truncate(path, length);
 }
 
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
 int truncate64(const char *path, off_t length) {
     if (break_hardlink_copy(path, length != 0) < 0) return -1;
     return real_truncate64 ? real_truncate64(path, length)
@@ -578,7 +578,7 @@ int ftruncate(int fd, off_t length) {
                           : real_syscall(SYS_ftruncate, fd, length);
 }
 
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
 int ftruncate64(int fd, off_t length) {
     const char *path = fdtab_get(fd);
     if (path) {
@@ -596,7 +596,7 @@ FILE *fopen(const char *path, const char *mode) {
     return real_fopen(path, mode);
 }
 
-#ifdef __GLIBC__
+#if defined(__GLIBC__) && defined(__LP64__)
 FILE *fopen64(const char *path, const char *mode) {
     if (mode_write(mode) && break_hardlink_copy(path, !mode_truncates(mode)) < 0) return NULL;
     return real_fopen64 ? real_fopen64(path, mode) : real_fopen(path, mode);

@@ -44,6 +44,15 @@ final class SkydnirRuntime {
         return dir;
     }
 
+    static String imagePlatform() {
+        String abi = Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "";
+        if ("arm64-v8a".equals(abi)) return "linux/arm64";
+        if ("armeabi-v7a".equals(abi) || "armeabi".equals(abi)) return "linux/arm/v7";
+        if ("x86_64".equals(abi)) return "linux/amd64";
+        if ("x86".equals(abi)) return "linux/386";
+        return "linux/arm64";
+    }
+
     static File socketFile(Context context) {
         return new File(homeDir(context), "engine-" + ENGINE_SOCKET_ID + ".sock");
     }
@@ -71,7 +80,9 @@ final class SkydnirRuntime {
         Files.deleteIfExists(new File(dockerBin, "libskydnirldmusl.so").toPath());
         Files.deleteIfExists(new File(dockerBin, "libskydnir-ld-musl-aarch64.so").toPath());
         optionalLink(new File(nativeDir, "libpdocker-ld-linux-aarch64.so"), new File(dockerBin, "pdocker-ld-linux-aarch64"));
+        optionalLink(new File(nativeDir, "libskydnir-ld-linux-armhf.so"), new File(dockerBin, "skydnir-ld-linux-armhf"));
         Files.deleteIfExists(new File(dockerBin, "libpdocker-ld-linux-aarch64.so").toPath());
+        Files.deleteIfExists(new File(dockerBin, "libskydnir-ld-linux-armhf.so").toPath());
         Files.deleteIfExists(new File(dockerBin, "pdocker-direct").toPath());
         optionalLink(new File(nativeDir, "libskydnirgpuexecutor.so"), new File(gpu, "skydnir-gpu-executor"));
         optionalLink(new File(nativeDir, "libskydnirmediaexecutor.so"), new File(media, "skydnir-media-executor"));

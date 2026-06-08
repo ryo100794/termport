@@ -1050,7 +1050,7 @@ def direct_executor_probe():
         return result
     output = proc.stdout.decode("utf-8", "replace")
     result = {
-        "probe_ok": proc.returncode == 0 and "pdocker-direct-executor:1" in output,
+        "probe_ok": proc.returncode == 0 and ("skydnir-direct-executor:1" in output or "pdocker-direct-executor:1" in output),
         "process_exec": proc.returncode == 0 and "process-exec=1" in output,
         "output": output,
         "error": "" if proc.returncode == 0 else f"probe exited {proc.returncode}",
@@ -4508,6 +4508,33 @@ def normalize_platform(value):
         raise ValueError(f"invalid platform: {platform!r}")
     return platform
 
+
+
+
+def platform_image_arch(platform=None):
+    value = normalize_platform(platform or PLATFORM).lower()
+    if value.startswith("linux/arm64"):
+        return "arm64"
+    if value.startswith("linux/arm/") or value == "linux/arm":
+        return "arm"
+    if value.startswith("linux/amd64"):
+        return "amd64"
+    if value.startswith("linux/386"):
+        return "386"
+    return value.split("/")[1] if "/" in value else value
+
+
+def platform_host_arch(platform=None):
+    value = normalize_platform(platform or PLATFORM).lower()
+    if value.startswith("linux/arm64"):
+        return "aarch64"
+    if value.startswith("linux/arm/") or value == "linux/arm":
+        return "armv7l"
+    if value.startswith("linux/amd64"):
+        return "x86_64"
+    if value.startswith("linux/386"):
+        return "i386"
+    return platform_image_arch(value)
 
 def image_to_path(name):
     return name.replace("/", "_").replace(":", "_")
@@ -8070,7 +8097,7 @@ class DockerAPIHandler(BaseHTTPRequestHandler):
                     {"Name": "Engine", "Version": "0.1.0",
                      "Details": {"ApiVersion": self.API_VERSION, "MinAPIVersion": "1.12",
                                  "GitCommit": "skydnir", "GoVersion": "none",
-                                 "Os": "linux", "Arch": "arm64",
+                                 "Os": "linux", "Arch": platform_image_arch(),
                                  "KernelVersion": os.uname().release,
                                  "BuildTime": "2026-04-17T00:00:00.000000000+00:00",
                                  "Experimental": "false"}},
@@ -8081,7 +8108,7 @@ class DockerAPIHandler(BaseHTTPRequestHandler):
                 "GitCommit": "skydnir",
                 "GoVersion": "none",
                 "Os": "linux",
-                "Arch": "arm64",
+                "Arch": platform_image_arch(),
                 "KernelVersion": os.uname().release,
                 "BuildTime": "2026-04-17T00:00:00.000000000+00:00",
             })
@@ -8122,7 +8149,7 @@ class DockerAPIHandler(BaseHTTPRequestHandler):
                 "OperatingSystem": runtime_operating_system(),
                 "OSVersion": "25.04",
                 "OSType": "linux",
-                "Architecture": "aarch64",
+                "Architecture": platform_host_arch(),
                 "IndexServerAddress": "https://index.docker.io/v1/",
                 "RegistryConfig": {"AllowNondistributableArtifactsCIDRs": None,
                                    "AllowNondistributableArtifactsHostnames": None,
@@ -10210,7 +10237,7 @@ def execute_dockerfile_build(dockerfile_path, context_dir, tag, buildargs, emit,
         # `rootfs.diff_ids` is what's needed for docker save/push to work
         # in Phase 5 without re-digesting).
         img_config = {
-            "architecture": "arm64",
+            "architecture": platform_image_arch(),
             "os": "linux",
             "config": {
                 "Env": [f"{k}={v}" for k, v in env.items()],
